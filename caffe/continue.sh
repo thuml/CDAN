@@ -1,0 +1,1 @@
+./build/tools/caffe train -solver ./examples/adaptation/experiments/amazon_to_webcam/protos/solver_residual.prototxt -weights ./examples/adaptation/experiments/amazon_to_webcam/snapshots/10000_iter_50000.caffemodel  -gpu 5

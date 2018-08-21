@@ -1,0 +1,20 @@
+net: "./models/rman/train_grl_alex.prototxt"
+#test_iter: 795 #webcam
+#test_iter: 498 #dslr
+#test_iter: 2817 #amazon
+#test_iter: 600 #clef
+#test_iter: 809 #*3 Art
+test_iter: 291 #*15 Clipart
+#test_iter: 193 #*23 Product
+#test_iter: 4357 #*1 Real_World
+test_interval: 500
+base_lr: 0.001
+momentum: 0.9
+lr_policy: "inv"
+gamma: 0.001
+power: 0.75
+display: 500
+max_iter: 100000
+snapshot: 5000
+snapshot_prefix: "./models/rman/caffemodel/grl"
+solver_mode: GPU
