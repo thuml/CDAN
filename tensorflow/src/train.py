@@ -73,7 +73,10 @@ def cdan_model_fn(features, labels, mode, params):
       'classes': tf.argmax(tf.slice(logits, [0, 0], [mid_point, num_classes]), axis=1),
       'probabilities': tf.nn.softmax(tf.slice(logits, [0, 0], [mid_point, num_classes]), name='softmax_tensor')
     }
-    ad_net = network.AdversarialNetwork()
+
+    global_step = tf.train.get_or_create_global_step()
+
+    ad_net = network.AdversarialNetwork(global_step)
     ad_out = ad_net(hidden_features, mode == tf.estimator.ModeKeys.TRAIN)
 
     cross_entropy = tf.losses.sparse_softmax_cross_entropy(
@@ -96,7 +99,6 @@ def cdan_model_fn(features, labels, mode, params):
     tf.summary.scalar('l2_loss', l2_loss)
     loss = cross_entropy + l2_loss + adversarial_loss
 
-    global_step = tf.train.get_or_create_global_step()
     learning_rate = inv_lr_decay(base_lr, global_step, gamma=0.001, power=0.75)
     tf.identity(learning_rate, name='learning_rate')
     tf.summary.scalar('learning_rate', learning_rate)
@@ -150,6 +152,15 @@ def cdan_model_fn(features, labels, mode, params):
     tf.identity(cross_entropy, name='cross_entropy')
     tf.summary.scalar('cross_entropy', cross_entropy)
 
+    def exclude_batch_norm(name):
+        return 'batch_normalization' not in name
+
+    l2_loss = weight_decay * tf.add_n(
+      # loss is computed using fp32 for numerical stability.
+      [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in tf.trainable_variables()
+       if exclude_batch_norm(v.name)])
+    tf.summary.scalar('l2_loss', l2_loss)
+    loss = cross_entropy + l2_loss
 
     accuracy = tf.metrics.accuracy(labels, predictions['classes'])
 
@@ -180,7 +191,14 @@ if __name__ == "__main__":
     parser.add_argument('--high', type=float, default=1.0, help="learning rate")
     parser.add_argument('--batch_size', type=int, default=36, help="learning rate")
     args = parser.parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+
+    if int(args.gpu_id) < 0:
+        sess_conf = tf.ConfigProto(device_count = {"GPU": 0})
+        sess_conf.gpu_options.allow_growth = True
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+        sess_conf = tf.ConfigProto()
+        sess_conf.gpu_options.allow_growth = True
 
     os.system('mkdir -p ' + args.output_dir)
 
@@ -195,7 +213,7 @@ if __name__ == "__main__":
     #test_iter = test_dset.make_initializable_iterator()
 
     if len(s_fnames) > len(t_fnames):
-        t_fnames *= len(s_fnames) // len(t_fnames)
+        t_n_fnames = t_fnames * (len(s_fnames) // len(t_fnames))
         s_sample = True
     else:
         s_fnames *= len(t_fnames) // len(s_fnames)
@@ -207,11 +225,11 @@ if __name__ == "__main__":
         s_input_labels = []
         for j in range(repeat_num):
             if s_sample:
-                sample_index = random.sample(range(len(s_fnames)), len(t_fnames))
+                sample_index = random.sample(range(len(s_fnames)), len(t_n_fnames))
                 s_fnames_sample = [s_fnames[i] for i in sample_index]
                 s_labels_sample = [s_labels[i] for i in sample_index]
                 s_input_fnames += s_fnames_sample
-                t_input_fnames += t_fnames
+                t_input_fnames += t_n_fnames
                 s_input_labels += s_labels_sample 
             else:
                 sample_index = random.sample(range(len(t_fnames)), len(s_fnames))
@@ -227,8 +245,7 @@ if __name__ == "__main__":
     def input_fn_test():
         return tf.data.Dataset.from_tensor_slices((t_fnames, t_labels)).map(test_prep, num_parallel_calls=4).batch(4).make_one_shot_iterator().get_next()
 
-    sess_conf = tf.ConfigProto()
-    sess_conf.gpu_options.allow_growth = True
+
     #sess = tf.Session(config=sess_conf)
     #features, labels = sess.run(input_fn_train().make_one_shot_iterator().get_next())
 
@@ -252,7 +269,7 @@ if __name__ == "__main__":
 
     for epochs in range(100):
         print("epochs {:d}".format(epochs))
-        classifier.train(input_fn=input_fn_train)
+        classifier.train(input_fn=input_fn_train, steps=2)
         print("caozhangjie start test")
         eval_results = classifier.evaluate(input_fn=input_fn_test)
         print(eval_results)

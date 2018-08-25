@@ -5,6 +5,7 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.framework import ops
+from tensorflow.python.ops import math_ops
 
 _BATCH_NORM_DECAY = 0.997
 _BATCH_NORM_EPSILON = 1e-5
@@ -12,6 +13,8 @@ DEFAULT_VERSION = 2
 DEFAULT_DTYPE = tf.float32
 CASTABLE_TYPES = (tf.float16,)
 ALLOWED_TYPES = (DEFAULT_DTYPE,) + CASTABLE_TYPES
+
+global_step_grl = 0
 
 
 ################################################################################
@@ -579,10 +582,12 @@ class ResNetModel(ResNetBaseModel):
 
 class FlipGradientBuilder(object):
     def __init__(self):
-        self.num_calls = 0
+        pass
 
-    def __call__(self, x, l=1.0):
-        grad_name = "FlipGradient%d" % self.num_calls
+    def __call__(self, x, l, global_step):
+        global global_step_grl
+        grad_name = "FlipGradient{:d}".format(global_step_grl)
+        global_step_grl += 1
         @ops.RegisterGradient(grad_name)
         def _flip_gradients(op, grad):
             return [tf.negative(grad) * l]
@@ -590,15 +595,13 @@ class FlipGradientBuilder(object):
         g = tf.get_default_graph()
         with g.gradient_override_map({"Identity": grad_name}):
             y = tf.identity(x)
-            
-        self.num_calls += 1
         return y
 
 class AdversarialNetwork(object):
-    def __init__(self):
+    def __init__(self, global_step):
         self.flip_gradient = FlipGradientBuilder()
+        self.global_step = global_step
         self.l = 0.0
-        self.iter_num = 0.0
         self.high = 1.0
         self.low = 0.0
         self.max_iter = 10000.0
@@ -607,9 +610,8 @@ class AdversarialNetwork(object):
     def __call__(self, inputs, training):
         with self._model_variable_scope():
             if training:
-                inputs = self.flip_gradient(inputs, self.l)
-                self.iter_num += 1
-                self.l = np.float(2.0 * (self.high - self.low) / (1.0 + np.exp(-self.alpha*self.iter_num / self.max_iter) - (self.high - self.low) + self.low)) 
+                inputs = self.flip_gradient(inputs, self.l, self.global_step)
+                self.l = 2.0 * (self.high - self.low) / (1.0 + tf.exp(-self.alpha*math_ops.cast(self.global_step, tf.float32) / self.max_iter) - (self.high - self.low) + self.low)
             inputs = tf.layers.dense(inputs=inputs, units=1024)
             inputs = tf.nn.relu(inputs)
             inputs = tf.nn.dropout(inputs, keep_prob=0.5)
