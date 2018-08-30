@@ -219,7 +219,7 @@ if __name__ == "__main__":
         s_fnames *= len(t_fnames) // len(s_fnames)
 
     def input_fn_train():
-        repeat_num = 1
+        repeat_num = 20
         t_input_fnames = []
         s_input_fnames = []
         s_input_labels = []
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 
     for epochs in range(100):
         print("epochs {:d}".format(epochs))
-        classifier.train(input_fn=input_fn_train, steps=2)
+        classifier.train(input_fn=input_fn_train, steps=500)
         print("caozhangjie start test")
         eval_results = classifier.evaluate(input_fn=input_fn_test)
         print(eval_results)

@@ -1,20 +1,21 @@
 net: "./models/cdan/train_cdan_alex.prototxt"
-test_iter: 795 #webcam
-#test_iter: 498 #dslr
-#test_iter: 2817 #amazon
-#test_iter: 600 #clef
-#test_iter: 809 #*3 Art
+#test_iter: 795 #webcam 0.001
+#test_iter: 498 #dslr 0.001
+#test_iter: 2817 #amazon 0.0003
+#test_iter: 600 #clef ip pi 0.001 ci ic cp pc 0.0003 
+test_iter: 809 #*3 Art
 #test_iter: 291 #*15 Clipart
 #test_iter: 193 #*23 Product
 #test_iter: 4357 #*1 Real_World
-test_interval: 500
+# office-home 0.001
+test_interval: 1000
 base_lr: 0.001
 momentum: 0.9
 lr_policy: "inv"
 gamma: 0.001
 power: 0.75
 display: 500
-max_iter: 100000
+max_iter: 15000
 snapshot: 5000
 snapshot_prefix: "./models/cdan/caffemodel/cdan"
 solver_mode: GPU

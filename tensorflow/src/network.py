@@ -611,7 +611,7 @@ class AdversarialNetwork(object):
         with self._model_variable_scope():
             if training:
                 inputs = self.flip_gradient(inputs, self.l, self.global_step)
-                self.l = 2.0 * (self.high - self.low) / (1.0 + tf.exp(-self.alpha*math_ops.cast(self.global_step, tf.float32) / self.max_iter) - (self.high - self.low) + self.low)
+                self.l = 2.0 * (self.high - self.low) / (1.0 + tf.exp(-self.alpha*tf.maximum(math_ops.cast(self.global_step, tf.float32)-1000.0, 0.0) / self.max_iter) - (self.high - self.low) + self.low)
             inputs = tf.layers.dense(inputs=inputs, units=1024)
             inputs = tf.nn.relu(inputs)
             inputs = tf.nn.dropout(inputs, keep_prob=0.5)

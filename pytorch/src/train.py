@@ -291,7 +291,7 @@ if __name__ == "__main__":
     # train config
     config = {}
     config["high"] = args.high
-    config["num_iterations"] = 12004
+    config["num_iterations"] = 100004
     config["test_interval"] = args.test_interval
     config["snapshot_interval"] = args.snapshot_interval
     config["output_for_test"] = True
@@ -346,6 +346,7 @@ if __name__ == "__main__":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
+        config["optimizer"]["lr_param"]["init_lr"] = 0.001
         config["network"]["params"]["class_num"] = 65
     config["out_file"].write(str(config))
     config["out_file"].flush()
