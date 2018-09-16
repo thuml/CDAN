@@ -41,11 +41,31 @@ def CADA_R(input_list, ad_net, grl_layer, rman_layer, use_focal=True, use_gpu=Tr
     return nn.BCELoss(weight=focal_weight)(ad_out, dc_target)
 
 
-def DANN(features, ad_net, grl_layer, use_gpu=True):
+def DANN(features, ad_net, grl_layer, weight, use_gpu=True):
     ad_out = ad_net(grl_layer(features))
     batch_size = ad_out.size(0) // 2
     dc_target = Variable(torch.from_numpy(np.array([[1]] * batch_size + [[0]] * batch_size)).float())
     if use_gpu:
         dc_target = dc_target.cuda()
-    return nn.BCELoss()(ad_out, dc_target)
-   
+    return nn.BCELoss(weight=weight)(ad_out, dc_target)
+
+def DCNDomainClsLoss(xs_list, xt_list, domain_cls_list, silence_layer_list, source_num, use_gpu):
+    batch_size = xs_list[0].size(0)
+    dc_target = Variable(torch.from_numpy(np.array([[1]] * batch_size + [[0]] * batch_size)).float())
+    if use_gpu:
+        dc_target = dc_target.cuda()
+    loss = 0.0
+    for i in range(source_num):
+        domain_out += domain_cls_list[i](silence_layer_list[i](torch.cat((xs_list[i], xt_list[i]), 0))
+        loss += nn.BCELoss(domain_out, dc_target)
+    return loss
+
+def DomainClsLoss(xs_feature, domain_cls, silence_layer, source_num, use_gpu):
+    batch_size = xs_feature.size(0) // source_num
+    dc_target = []
+    for i in range(source_num):
+        dc_target += [[i]] * batch_size
+    dc_target = Variable(torch.from_numpy(np.array(dc_target)).float())
+    if use_gpu:
+        dc_target = dc_target.cuda()
+    return nn.CrossEntropyLoss(domain_cls(silence_layer(xs_feature)), dc_target)

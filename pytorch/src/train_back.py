@@ -18,6 +18,50 @@ import random
 
 optim_dict = {"SGD": optim.SGD}
 
+def image_classification_predict(loader, model, test_10crop=True, gpu=True, softmax_param=1.0):
+    start_test = True
+    if test_10crop:
+        iter_test = [iter(loader['test'+str(i)]) for i in range(10)]
+        for i in range(len(loader['test0'])):
+            data = [iter_test[j].next() for j in range(10)]
+            inputs = [data[j][0] for j in range(10)]
+            labels = data[0][1]
+            if gpu:
+                for j in range(10):
+                    inputs[j] = Variable(inputs[j].cuda())
+                labels = Variable(labels.cuda())
+            else:
+                for j in range(10):
+                    inputs[j] = Variable(inputs[j])
+                labels = Variable(labels)
+            outputs = []
+            for j in range(10):
+                _, predict_out = model(inputs[j])
+                outputs.append(nn.Softmax(dim=1)(softmax_param * predict_out))
+            softmax_outputs = sum(outputs)
+            if start_test:
+                all_softmax_output = softmax_outputs.data.cpu().float()
+                start_test = False
+            else:
+                all_softmax_output = torch.cat((all_softmax_output, softmax_outputs.data.cpu().float()), 0)
+    else:
+        iter_val = iter(loader["test"])
+        for i in range(len(loader['test'])):
+            data = iter_val.next()
+            inputs = data[0]
+            if gpu:
+                inputs = Variable(inputs.cuda())
+            else:
+                inputs = Variable(inputs)
+            _, outputs = model(inputs)
+            softmax_outputs = nn.Softmax(dim=1)(softmax_param * outputs)
+            if start_test:
+                all_softmax_output = softmax_outputs.data.cpu().float()
+                start_test = False
+            else:
+                all_softmax_output = torch.cat((all_softmax_output, softmax_outputs.data.cpu().float()), 0)
+    return all_softmax_output
+
 def image_classification_test(loader, model, test_10crop=True, gpu=True, iter_num=-1):
     start_test = True
     if test_10crop:
@@ -37,7 +81,7 @@ def image_classification_test(loader, model, test_10crop=True, gpu=True, iter_nu
             outputs = []
             for j in range(10):
                 predict_out = model(inputs[j])
-                outputs.append(nn.Softmax(dim=1)(predict_out[0]))
+                outputs.append(nn.Softmax(dim=1)(predict_out))
             outputs = sum(outputs)
             if start_test:
                 all_output = outputs.data.float()
@@ -58,7 +102,7 @@ def image_classification_test(loader, model, test_10crop=True, gpu=True, iter_nu
             else:
                 inputs = Variable(inputs)
                 labels = Variable(labels)
-            outputs = model(inputs)[0]
+            _, outputs = model(inputs)
             if start_test:
                 all_output = outputs.data.float()
                 all_label = labels.data.float()
@@ -75,7 +119,10 @@ def train(config):
     ## set pre-process
     prep_dict = {}
     prep_config = config["prep"]
-    prep_dict["source"] = prep.image_train( \
+    prep_dict["source1"] = prep.image_train( \
+                            resize_size=prep_config["resize_size"], \
+                            crop_size=prep_config["crop_size"])
+    prep_dict["source2"] = prep.image_train( \
                             resize_size=prep_config["resize_size"], \
                             crop_size=prep_config["crop_size"])
     prep_dict["target"] = prep.image_train( \
@@ -94,12 +141,15 @@ def train(config):
     dsets = {}
     dset_loaders = {}
     data_config = config["data"]
-    source_num = config["network"]["params"]["source_num"]
-    for i in range(source_num):
-        dsets["source"+str(i)] = ImageList(open(data_config["source"+str(i)]["list_path"]).readlines(), \
-                                transform=prep_dict["source"])
-        dset_loaders["source"+str(i)] = util_data.DataLoader(dsets["source"+str(i)], \
-            batch_size=data_config["source"+str(i)]["batch_size"], \
+    dsets["source1"] = ImageList(open(data_config["source1"]["list_path"]).readlines(), \
+                                transform=prep_dict["source1"])
+    dset_loaders["source1"] = util_data.DataLoader(dsets["source1"], \
+            batch_size=data_config["source1"]["batch_size"], \
+            shuffle=True, num_workers=4)
+    dsets["source2"] = ImageList(open(data_config["source2"]["list_path"]).readlines(), \
+                                transform=prep_dict["source2"])
+    dset_loaders["source2"] = util_data.DataLoader(dsets["source2"], \
+            batch_size=data_config["source2"]["batch_size"], \
             shuffle=True, num_workers=4)
     dsets["target"] = ImageList(open(data_config["target"]["list_path"]).readlines(), \
                                 transform=prep_dict["target"])
@@ -130,28 +180,33 @@ def train(config):
 
     use_gpu = torch.cuda.is_available()
     if use_gpu:
-        base_network.to_gpu()
+        base_network = base_network.cuda()
 
     ## collect parameters
     if net_config["params"]["new_cls"]:
         if net_config["params"]["use_bottleneck"]:
-            parameter_list = [{"params":base_network.feature_layers.parameters(), "lr":1}] + \
-                            [{"params":base_network.bottleneck_list[i].parameters(), "lr":10} for i in range(source_num)] + \
-                            [{"params":base_network.fc_list[i].parameters(), "lr":10} for i in range(source_num)]
+            parameter_list = [{"params":base_network.feature_layers.parameters(), "lr":1}, \
+                            {"params":base_network.bottleneck1.parameters(), "lr":10}, \
+                            {"params":base_network.fc1.parameters(), "lr":10}, \
+                            {"params":base_network.bottleneck2.parameters(), "lr":10}, \
+                            {"params":base_network.fc2.parameters(), "lr":10}]
         else:
-            parameter_list = [{"params":base_network.feature_layers.parameters(), "lr":1}] + \
-                            [{"params":base_network.fc_list[i].parameters(), "lr":10} for i in range(source_num)]
+            parameter_list = [{"params":base_network.feature_layers.parameters(), "lr":1}, \
+                            {"params":base_network.fc1.parameters(), "lr":10}, \
+                            {"params":base_network.fc2.parameters(), "lr":10}]
     else:
         parameter_list = [{"params":base_network.parameters(), "lr":1}]
 
     ## add additional network for some methods
-    ad_net_list = [network.AdversarialNetwork(base_network.output_num()) for i in range(source_num)]
-    gradient_reverse_layer_list = [network.AdversarialLayer(high_value=config["high"]) for i in range(source_num)]
-    domain_cls = network.DomainClassifier(base_network.output_num(), source_num)
-    silence_layer = network.SilenceLayer()
+    ad_net1 = network.AdversarialNetwork(base_network.output_num())
+    ad_net2 = network.AdversarialNetwork(base_network.output_num())
+    gradient_reverse_layer = network.AdversarialLayer(high_value=config["high"])
+    gradient_reverse_layer1 = network.AdversarialLayer(high_value=config["high"])
     if use_gpu:
-        ad_net_list = [ad_net.cuda() for ad_net in ad_net_list]
-    parameter_list += [{"params":ad_net_list[i].parameters(), "lr":10} for i in range(source_num)]
+        ad_net1 = ad_net1.cuda()
+        ad_net2 = ad_net2.cuda()
+    parameter_list.append({"params":ad_net1.parameters(), "lr":10})
+    parameter_list.append({"params":ad_net2.parameters(), "lr":10})
  
     ## set optimizer
     optimizer_config = config["optimizer"]
@@ -165,13 +220,11 @@ def train(config):
 
 
     ## train   
-    len_train_source_list = [len(dset_loaders["source"+str(i)]) - 1 for i in range(source_num)]
+    len_train_source1 = len(dset_loaders["source1"]) - 1
+    len_train_source2 = len(dset_loaders["source2"]) - 1
     len_train_target = len(dset_loaders["target"]) - 1
     transfer_loss_value = classifier_loss_value = total_loss_value = 0.0
     best_acc = 0.0
-    iter_source_list = [None for j in range(source_num)]
-    inputs_source = [None for j in range(source_num)]
-    labels_source = [None for j in range(source_num)]
     for i in range(config["num_iterations"]):
         if i % config["test_interval"] == config["test_interval"]-1:
             base_network.train(False)
@@ -195,44 +248,37 @@ def train(config):
         base_network.train(True)
         optimizer = lr_scheduler(param_lr, optimizer, i, **schedule_param)
         optimizer.zero_grad()
-        for j in range(source_num):
-            if i % len_train_source_list[j] == 0:
-                iter_source_list[j] = iter(dset_loaders["source"+str(j)])
+        if i % len_train_source1 == 0:
+            iter_source1 = iter(dset_loaders["source1"])
+        if i % len_train_source2 == 0:
+            iter_source2 = iter(dset_loaders["source2"])
         if i % len_train_target == 0:
             iter_target = iter(dset_loaders["target"])
-        for j in range(source_num):
-            inputs_source[j], labels_source[j] = iter_source_list[j].next()
+        inputs_source1, labels_source1 = iter_source1.next()
+        inputs_source2, labels_source2 = iter_source2.next()
         inputs_target, labels_target = iter_target.next()
         if use_gpu:
-            for j in range(source_num):
-                inputs_source[j] = Variable(inputs_source[j]).cuda()
-                labels_source[j] = Variable(labels_source[j]).cuda()
-            inputs_target = Variable(inputs_target).cuda()
+            inputs_source1, inputs_source2, inputs_target, labels_source1, labels_source2 = \
+                Variable(inputs_source1).cuda(), Variable(inputs_source2).cuda(), Variable(inputs_target).cuda(), \
+                Variable(labels_source1).cuda(), Variable(labels_source2).cuda()
         else:
-            for j in range(source_num):
-                inputs_source[j] = Variable(inputs_source[j])
-                labels_source[j] = Variable(labels_source[j])
-            inputs_target = Variable(inputs_target)
+            inputs_source1, inputs_source2, inputs_target, labels_source1, labels_source2 = Variable(inputs_source1), Variable(inputs_source2), \
+                Variable(inputs_target), Variable(labels_source1), Variable(labels_source2)
            
-        inputs = torch.cat((inputs_source + [inputs_target]), dim=0)
-        xs_list, ys_list, xt_list, yt_list = base_network(inputs)
-        domain_cls_feature = base_network.feature_layers(inputs).split(source_num+1)
-        source_domain_cls = torch.cat(domain_cls_feature[0:source_num], 0)
-        target_domain_cls = domain_cls_feature[source_num]
+        inputs = torch.cat((inputs_source1, inputs_source2, inputs_target), dim=0)
+        fs1, ys1, fs2, ys2, ft1, yt1, ft2, yt2 = base_network(inputs)
 
         #softmax_out = nn.Softmax(dim=1)(outputs).detach()
-        for j in range(source_num):
-            ad_net_list[j].train(True)
+        ad_net1.train(True)
+        ad_net2.train(True)
         #transfer_loss = loss.CADA([features, softmax_out], ad_net, gradient_reverse_layer, \
-        #                                loss_params["use_focal"], use_gpu)
-        transfer_loss = 0.0
-        classifier_loss = 0.0
-        domain_cls_loss = loss.DomainClsLoss(source_domain_cls, domain_cls, silence_layer, source_num, use_gpu)
-        weight = Variable(nn.Softmax(dim=1)(domain_cls(target_domain_cls)).data.float())
-        for j in range(source_num):
-            transfer_loss += loss.DANN(torch.cat((xs_list[j], xt_list[j]), 0), ad_net_list[j], gradient_reverse_layer_list[j], weight[:, j], use_gpu)
-            classifier_loss += 0.5*nn.CrossEntropyLoss()(ys_list[j], labels_source[j])
-        total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss + domain_cls_loss
+        #loss_params["use_focal"], use_gpu)
+        transfer_loss = loss.DANN(torch.cat((fs1, ft1),0), ad_net1, gradient_reverse_layer, use_gpu)
+        transfer_loss += 0.0*loss.DANN(torch.cat((fs2, ft2),0), ad_net2, gradient_reverse_layer1, use_gpu)
+
+        classifier_loss = nn.CrossEntropyLoss()(ys1, labels_source1)
+        #classifier_loss += 0*nn.CrossEntropyLoss()(ys2, labels_source2)
+        total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
         total_loss.backward()
         optimizer.step()
     torch.save(best_model, osp.join(config["output_path"], "best_model.pth.tar"))
@@ -244,7 +290,6 @@ if __name__ == "__main__":
     parser.add_argument('--net', type=str, default='ResNet50', help="Options: ResNet18,34,50,101,152; AlexNet")
     parser.add_argument('--dset', type=str, default='office', help="The dataset or source dataset used")
     parser.add_argument('--s_dset_path', type=str, default='../data/office/amazon_31_list.txt', help="The source dataset path list")
-    parser.add_argument('--s_dset_path1', type=str, default='../data/office/amazon_31_list.txt', help="The source dataset path list")
     parser.add_argument('--t_dset_path', type=str, default='../data/office/webcam_10_list.txt', help="The target dataset path list")
     parser.add_argument('--test_interval', type=int, default=500, help="interval of two continuous test phase")
     parser.add_argument('--snapshot_interval', type=int, default=5000, help="interval of two continuous output model")
@@ -257,7 +302,7 @@ if __name__ == "__main__":
     # train config
     config = {}
     config["high"] = args.high
-    config["num_iterations"] = 12004
+    config["num_iterations"] = 100004
     config["test_interval"] = args.test_interval
     config["snapshot_interval"] = args.snapshot_interval
     config["output_for_test"] = True
@@ -272,30 +317,24 @@ if __name__ == "__main__":
     config["loss"] = {"trade_off":1.0, "use_focal":True}
     if "AlexNet" in args.net:
         config["network"] = {"name":network.AlexNetFc, \
-            "params":{"use_bottleneck":True, "bottleneck_dim":256, "new_cls":True, "source_num":2} }
+            "params":{"use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
     elif "ResNet" in args.net:
         config["network"] = {"name":network.ResNetFc, \
-            "params":{"resnet_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True, "source_num":2} }
+            "params":{"resnet_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
     elif "VGG" in args.net:
         config["network"] = {"name":network.VGGFc, \
-            "params":{"vgg_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True, "source_num":2} }
+            "params":{"vgg_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
     config["optimizer"] = {"type":"SGD", "optim_params":{"lr":1.0, "momentum":0.9, \
                            "weight_decay":0.0005, "nesterov":True}, "lr_type":"inv", \
                            "lr_param":{"init_lr":args.lr, "gamma":0.001, "power":0.75} }
 
     config["dataset"] = args.dset
     if config["dataset"] == "office":
-        config["data"] = {"source0":{"list_path":args.s_dset_path, "batch_size":36}, \
-                          "source1":{"list_path":args.s_dset_path1, "batch_size":36}, \
-                          "target":{"list_path":args.t_dset_path, "batch_size":36}, \
-                          "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        if "amazon" in args.s_dset_path and "webcam" in args.t_dset_path:
-            config["optimizer"]["lr_param"]["init_lr"] = 0.001
-        elif "amazon" in args.s_dset_path and "dslr" in args.t_dset_path:
-            config["optimizer"]["lr_param"]["init_lr"] = 0.0003
-            config["high"] = 0.8
-        else:
-            config["optimizer"]["lr_param"]["init_lr"] = 0.0003
+        config["data"] = {"source1":{"list_path":"../data/office/webcam_list.txt", "batch_size":36}, \
+                          "source2":{"list_path":"../data/office/dslr_list.txt", "batch_size":36}, \
+                          "target":{"list_path":"../data/office/amazon_list.txt", "batch_size":36}, \
+                          "test":{"list_path":"../data/office/amazon_list.txt", "batch_size":4}}
+        config["optimizer"]["lr_param"]["init_lr"] = 0.0003
         config["network"]["params"]["class_num"] = 31
     elif config["dataset"] == "image-clef":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
@@ -313,6 +352,7 @@ if __name__ == "__main__":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
+        config["optimizer"]["lr_param"]["init_lr"] = 0.001
         config["network"]["params"]["class_num"] = 65
     config["out_file"].write(str(config))
     config["out_file"].flush()

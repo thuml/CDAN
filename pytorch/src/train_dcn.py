@@ -146,12 +146,14 @@ def train(config):
 
     ## add additional network for some methods
     ad_net_list = [network.AdversarialNetwork(base_network.output_num()) for i in range(source_num)]
+    domain_cls_list = [network.AdversarialNetwork(base_network.output_num()) for i in range(source_num)]
+    silence_list = [network.SilenceLayer() for i in range(source_num)]
     gradient_reverse_layer_list = [network.AdversarialLayer(high_value=config["high"]) for i in range(source_num)]
-    domain_cls = network.DomainClassifier(base_network.output_num(), source_num)
-    silence_layer = network.SilenceLayer()
     if use_gpu:
         ad_net_list = [ad_net.cuda() for ad_net in ad_net_list]
+        domain_cls_list = [domain_cls for domain_cls in domain_cls_list]
     parameter_list += [{"params":ad_net_list[i].parameters(), "lr":10} for i in range(source_num)]
+    parameter_list += [{"params":domain_cls_list[i].parameters(), "lr":10} for i in range(source_num)]
  
     ## set optimizer
     optimizer_config = config["optimizer"]
@@ -216,9 +218,6 @@ def train(config):
            
         inputs = torch.cat((inputs_source + [inputs_target]), dim=0)
         xs_list, ys_list, xt_list, yt_list = base_network(inputs)
-        domain_cls_feature = base_network.feature_layers(inputs).split(source_num+1)
-        source_domain_cls = torch.cat(domain_cls_feature[0:source_num], 0)
-        target_domain_cls = domain_cls_feature[source_num]
 
         #softmax_out = nn.Softmax(dim=1)(outputs).detach()
         for j in range(source_num):
@@ -227,10 +226,9 @@ def train(config):
         #                                loss_params["use_focal"], use_gpu)
         transfer_loss = 0.0
         classifier_loss = 0.0
-        domain_cls_loss = loss.DomainClsLoss(source_domain_cls, domain_cls, silence_layer, source_num, use_gpu)
-        weight = Variable(nn.Softmax(dim=1)(domain_cls(target_domain_cls)).data.float())
+        domain_cls_loss = loss.DCNDomainClsLoss(xs_list, xt_list, domain_cls_list, silence_list, source_num, use_gpu)
         for j in range(source_num):
-            transfer_loss += loss.DANN(torch.cat((xs_list[j], xt_list[j]), 0), ad_net_list[j], gradient_reverse_layer_list[j], weight[:, j], use_gpu)
+            transfer_loss += 0.5*loss.DANN(torch.cat((xs_list[j], xt_list[j]), 0), ad_net_list[j], gradient_reverse_layer_list[j], use_gpu)
             classifier_loss += 0.5*nn.CrossEntropyLoss()(ys_list[j], labels_source[j])
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss + domain_cls_loss
         total_loss.backward()

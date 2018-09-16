@@ -79,7 +79,7 @@ class AlexNetFc(nn.Module):
 resnet_dict = {"ResNet18":models.resnet18, "ResNet34":models.resnet34, "ResNet50":models.resnet50, "ResNet101":models.resnet101, "ResNet152":models.resnet152}
 
 class ResNetFc(nn.Module):
-  def __init__(self, resnet_name, use_bottleneck=True, bottleneck_dim=256, new_cls=False, class_num=1000, source_num=2):
+  def __init__(self, resnet_name, use_bottleneck=True, bottleneck_dim=256, new_cls=False, class_num=1000):
     super(ResNetFc, self).__init__()
     model_resnet = resnet_dict[resnet_name](pretrained=True)
     self.conv1 = model_resnet.conv1
@@ -94,57 +94,63 @@ class ResNetFc(nn.Module):
     self.feature_layers = nn.Sequential(self.conv1, self.bn1, self.relu, self.maxpool, \
                          self.layer1, self.layer2, self.layer3, self.layer4, self.avgpool)
 
-    self.source_num = source_num
     self.use_bottleneck = use_bottleneck
     self.new_cls = new_cls
     if new_cls:
-        self.fc_list = []
         if self.use_bottleneck:
-            self.bottleneck_list = []
-            for i in range(self.source_num):
-                self.bottleneck_list.append(nn.Linear(model_resnet.fc.in_features, bottleneck_dim))
-                self.bottleneck_list[-1].weight.data.normal_(0, 0.005)
-                self.bottleneck_list[-1].bias.data.fill_(0.0)
-                self.fc_list.append(nn.Linear(bottleneck_dim, class_num))
-                self.fc_list[-1].weight.data.normal_(0, 0.01)
-                self.fc_list[-1].bias.data.fill_(0.0)
+            self.bottleneck1 = nn.Linear(model_resnet.fc.in_features, bottleneck_dim)
+            self.bottleneck1.weight.data.normal_(0, 0.005)
+            self.bottleneck1.bias.data.fill_(0.0)
+            self.fc1 = nn.Linear(bottleneck_dim, class_num)
+            self.fc1.weight.data.normal_(0, 0.01)
+            self.fc1.bias.data.fill_(0.0)
+            self.bottleneck2 = nn.Linear(model_resnet.fc.in_features, bottleneck_dim)
+            self.bottleneck2.weight.data.normal_(0, 0.005)
+            self.bottleneck2.bias.data.fill_(0.0)
+            self.fc2 = nn.Linear(bottleneck_dim, class_num)
+            self.fc2.weight.data.normal_(0, 0.01)
+            self.fc2.bias.data.fill_(0.0)
             self.__in_features = bottleneck_dim
         else:
-            for i in range(self.source_num):
-                self.fc_list.append(nn.Linear(model_resnet.fc.in_features, class_num))
-                self.fc_list[-1].weight.data.normal_(0, 0.01)
-                self.fc_list[-1].bias.data.fill_(0.0)
+            self.fc1 = nn.Linear(model_resnet.fc.in_features, class_num)
+            self.fc1.weight.data.normal_(0, 0.01)
+            self.fc1.bias.data.fill_(0.0)
+            self.fc2 = nn.Linear(model_resnet.fc.in_features, class_num)
+            self.fc2.weight.data.normal_(0, 0.01)
+            self.fc2.bias.data.fill_(0.0)
             self.__in_features = model_resnet.fc.in_features
     else:
         self.fc = model_resnet.fc
         self.__in_features = model_resnet.fc.in_features
+    self.softmax = nn.Softmax(dim=1)
 
-  def to_gpu(self):
-    self.feature_layers = self.feature_layers.cuda()
-    for i in range(self.source_num):
-        if self.use_bottleneck:
-            self.bottleneck_list[i] = self.bottleneck_list[i].cuda()
-        self.fc_list[i] = self.fc_list[i].cuda()
-
-  def forward(self, x):
-    if self.training:
-        x = self.feature_layers(x)
-        x = x.view(x.size(0), -1)
-        batch_size = x.size(0) // (self.source_num +1)
-        x_list = [x[i*batch_size:(i+1)*batch_size] for i in range(self.source_num+1)]
-        if self.use_bottleneck and self.new_cls:
-            xs_list = [self.bottleneck_list[i](x_list[i]) for i in range(self.source_num)]
-            xt_list = [self.bottleneck_list[i](x_list[-1]) for i in range(self.source_num)]
-        ys_list = [self.fc_list[i](xs_list[i]) for i in range(self.source_num)]
-        yt_list = [self.fc_list[i](xt_list[i]) for i in range(self.source_num)]
-        return xs_list, ys_list, xt_list, yt_list
-    else:
-        x = self.feature_layers(x)
-        x = x.view(x.size(0), -1)
-        if self.use_bottleneck and self.new_cls:
-            xt_list = [self.bottleneck_list[i](x) for i in range(self.source_num)]
-        yt_list = [self.fc_list[i](xt_list[i]) for i in range(self.source_num)]
-        return yt_list
+  def forward(self, x, w1=None, w2=None):
+   if self.training:
+    x = self.feature_layers(x)
+    x = x.view(x.size(0), -1)
+    batch_size = x.size(0)//3
+    x1 = x[0:batch_size, :]
+    x2 = x[batch_size:batch_size*2, :]
+    x3 = x[batch_size*2:batch_size*3, :]
+    if self.use_bottleneck and self.new_cls:
+        x1 = self.bottleneck1(x1)
+        x2 = self.bottleneck2(x2)
+        xt1 = self.bottleneck1(x3)
+        xt2 = self.bottleneck2(x3)
+    y1 = self.fc1(x1)
+    y2 = self.fc2(x2)
+    yt1 = self.fc1(xt1)
+    yt2 = self.fc2(xt2)
+    return x1, y1, x2, y2, xt1, yt1, xt2, yt2
+   else:
+    x = self.feature_layers(x)
+    x = x.view(x.size(0), -1)
+    x1 = self.bottleneck1(x)
+    x2 = self.bottleneck2(x)
+    y1 = self.softmax(self.fc1(x1))
+    y2 = self.softmax(self.fc2(x2))
+    return y1
+    
 
   def output_num(self):
     return self.__in_features
@@ -223,39 +229,6 @@ class AdversarialNetwork(nn.Module):
 
   def output_num(self):
     return 1
-
-class DomainClassifier(nn.Module):
-  def __init__(self, in_feature, class_num=2):
-    super(AdversarialNetwork, self).__init__()
-    self.class_num = class_num
-    self.ad_layer1 = nn.Linear(in_feature, 1024)
-    self.ad_layer2 = nn.Linear(1024,1024)
-    self.ad_layer3 = nn.Linear(1024, class_num)
-    self.ad_layer1.weight.data.normal_(0, 0.01)
-    self.ad_layer2.weight.data.normal_(0, 0.01)
-    self.ad_layer3.weight.data.normal_(0, 0.3)
-    self.ad_layer1.bias.data.fill_(0.0)
-    self.ad_layer2.bias.data.fill_(0.0)
-    self.ad_layer3.bias.data.fill_(0.0)
-    self.relu1 = nn.ReLU()
-    self.relu2 = nn.ReLU()
-    self.dropout1 = nn.Dropout(0.5)
-    self.dropout2 = nn.Dropout(0.5)
-    self.sigmoid = nn.Sigmoid()
-
-  def forward(self, x):
-    x = self.ad_layer1(x)
-    x = self.relu1(x)
-    x = self.dropout1(x)
-    x = self.ad_layer2(x)
-    x = self.relu2(x)
-    x = self.dropout2(x)
-    x = self.ad_layer3(x)
-    return x
-
-  def output_num(self):
-    return self.class_num
-
 
 class SmallAdversarialNetwork(nn.Module):
   def __init__(self, in_feature):
