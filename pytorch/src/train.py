@@ -18,50 +18,6 @@ import random
 
 optim_dict = {"SGD": optim.SGD}
 
-def image_classification_predict(loader, model, test_10crop=True, gpu=True, softmax_param=1.0):
-    start_test = True
-    if test_10crop:
-        iter_test = [iter(loader['test'+str(i)]) for i in range(10)]
-        for i in range(len(loader['test0'])):
-            data = [iter_test[j].next() for j in range(10)]
-            inputs = [data[j][0] for j in range(10)]
-            labels = data[0][1]
-            if gpu:
-                for j in range(10):
-                    inputs[j] = Variable(inputs[j].cuda())
-                labels = Variable(labels.cuda())
-            else:
-                for j in range(10):
-                    inputs[j] = Variable(inputs[j])
-                labels = Variable(labels)
-            outputs = []
-            for j in range(10):
-                _, predict_out = model(inputs[j])
-                outputs.append(nn.Softmax(dim=1)(softmax_param * predict_out))
-            softmax_outputs = sum(outputs)
-            if start_test:
-                all_softmax_output = softmax_outputs.data.cpu().float()
-                start_test = False
-            else:
-                all_softmax_output = torch.cat((all_softmax_output, softmax_outputs.data.cpu().float()), 0)
-    else:
-        iter_val = iter(loader["test"])
-        for i in range(len(loader['test'])):
-            data = iter_val.next()
-            inputs = data[0]
-            if gpu:
-                inputs = Variable(inputs.cuda())
-            else:
-                inputs = Variable(inputs)
-            _, outputs = model(inputs)
-            softmax_outputs = nn.Softmax(dim=1)(softmax_param * outputs)
-            if start_test:
-                all_softmax_output = softmax_outputs.data.cpu().float()
-                start_test = False
-            else:
-                all_softmax_output = torch.cat((all_softmax_output, softmax_outputs.data.cpu().float()), 0)
-    return all_softmax_output
-
 def image_classification_test(loader, model, test_10crop=True, gpu=True, iter_num=-1):
     start_test = True
     if test_10crop:
@@ -199,9 +155,15 @@ def train(config):
         parameter_list = [{"params":base_network.parameters(), "lr":1}]
 
     ## add additional network for some methods
-    ad_net = network.AdversarialNetwork(base_network.output_num() * class_num)
     gradient_reverse_layer = network.AdversarialLayer(high_value=config["high"])
+    if config["loss"]["random"]:
+        random_layer = network.RandomLayer([base_network.output_num(), class_num], config["loss"]["random_dim"])
+        ad_net = network.AdversarialNetwork(config["loss"]["random_dim"])
+    else:
+        ad_net = network.AdversarialNetwork(base_network.output_num() * class_num)
     if use_gpu:
+        if config["loss"]["random"]:
+            random_layer.cuda()
         ad_net = ad_net.cuda()
     parameter_list.append({"params":ad_net.parameters(), "lr":10})
  
@@ -262,9 +224,14 @@ def train(config):
         features, outputs = base_network(inputs)
 
         softmax_out = nn.Softmax(dim=1)(outputs).detach()
-        ad_net.train(True)         
-        transfer_loss = loss.CADA([features, softmax_out], ad_net, gradient_reverse_layer, \
-                                           loss_params["use_focal"], use_gpu)
+        ad_net.train(True)
+        if config["loss"]['random']:
+            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, gradient_reverse_layer, \
+                                     random_layer, loss_params["use_focal"], use_gpu)
+        else:
+            transfer_loss = loss.CADA([features, softmax_out], ad_net, gradient_reverse_layer, \
+                                     loss_params["use_focal"], use_gpu)
+           
 
         classifier_loss = nn.CrossEntropyLoss()(outputs.narrow(0, 0, inputs.size(0)//2), labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
@@ -284,7 +251,8 @@ if __name__ == "__main__":
     parser.add_argument('--snapshot_interval', type=int, default=5000, help="interval of two continuous output model")
     parser.add_argument('--output_dir', type=str, default='san', help="output directory of our model (in ../snapshot directory)")
     parser.add_argument('--lr', type=float, default=0.001, help="learning rate")
-    parser.add_argument('--high', type=float, default=1.0, help="learning rate")
+    parser.add_argument('--high', type=float, default=1.0, help="highest number")
+    parser.add_argument('--random', type=bool, default=False, help="whether use random projection")
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
@@ -313,6 +281,9 @@ if __name__ == "__main__":
     elif "VGG" in args.net:
         config["network"] = {"name":network.VGGFc, \
             "params":{"vgg_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
+    config["loss"]["random"] = args.random
+    config["loss"]["random_dim"] = 1024
+
     config["optimizer"] = {"type":"SGD", "optim_params":{"lr":1.0, "momentum":0.9, \
                            "weight_decay":0.0005, "nesterov":True}, "lr_type":"inv", \
                            "lr_param":{"init_lr":args.lr, "gamma":0.001, "power":0.75} }
