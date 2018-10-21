@@ -26,11 +26,24 @@ class SilenceLayer(torch.autograd.Function):
   def __init__(self):
     pass
   def forward(self, input):
-    return input * 1.0
+    return input * 1
 
   def backward(self, gradOutput):
     return 0 * gradOutput
 
+class RandomLayer(torch.autograd.Function):
+   def __init__(self, input_dim_list=[], output_dim=1024):
+     self.input_num = len(input_dim_list)
+     self.output_dim = output_dim
+     self.random_matrix = [Variable(torch.randn(input_dim_list[i], output_dim)) for i in range(self.input_num)]
+     for val in self.random_matrix:
+       val.requires_grad = False
+   def forward(self, input_list):
+     return_list = [torch.mm(input_list[i], self.random_matrix[i]) for i in range(self.input_num)    ]
+     return_list[0] = return_list[0] / float(self.output_dim)
+     return return_list
+   def cuda(self):
+     self.random_matrix = [val.cuda() for val in self.random_matrix]
 
 # convnet without the last layer
 class AlexNetFc(nn.Module):
@@ -193,7 +206,7 @@ class VGGFc(nn.Module):
     return self.__in_features
 
 class AdversarialNetwork(nn.Module):
-  def __init__(self, in_feature):
+  def __init__(self, in_feature, class_num=None):
     super(AdversarialNetwork, self).__init__()
     self.ad_layer1 = nn.Linear(in_feature, 1024)
     self.ad_layer2 = nn.Linear(1024,1024)
@@ -209,17 +222,22 @@ class AdversarialNetwork(nn.Module):
     self.dropout1 = nn.Dropout(0.5)
     self.dropout2 = nn.Dropout(0.5)
     self.sigmoid = nn.Sigmoid()
+    if class_num is not None:
+        self.embedding_layer = nn.Linear(class_num, 1024)
+        self.silence_layer = SilenceLayer()
 
-  def forward(self, x):
+  def forward(self, x, y_label=None):
     x = self.ad_layer1(x)
     x = self.relu1(x)
     x = self.dropout1(x)
     x = self.ad_layer2(x)
     x = self.relu2(x)
     x = self.dropout2(x)
-    x = self.ad_layer3(x)
-    x = self.sigmoid(x)
-    return x
+    y = self.ad_layer3(x)
+    if y_label is not None:
+        y += torch.sum(self.embedding_layer(self.silence_layer(y_label)) * x, dim=1, keepdim=True)
+    y = self.sigmoid(y)
+    return y
 
   def output_num(self):
     return 1

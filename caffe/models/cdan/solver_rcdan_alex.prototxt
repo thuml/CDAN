@@ -1,5 +1,5 @@
 net: "./models/cdan/train_rcdan_alex.prototxt"
-test_iter: 795 #webcam
+test_iter: 795 #webcam 
 #test_iter: 498 #dslr
 #test_iter: 2817 #amazon
 #test_iter: 600 #clef
@@ -11,7 +11,7 @@ test_interval: 500
 base_lr: 0.001
 momentum: 0.9
 lr_policy: "inv"
-gamma: 0.0003
+gamma: 0.001
 power: 0.75
 display: 500
 max_iter: 100000
