@@ -92,7 +92,7 @@ class AlexNetFc(nn.Module):
 resnet_dict = {"ResNet18":models.resnet18, "ResNet34":models.resnet34, "ResNet50":models.resnet50, "ResNet101":models.resnet101, "ResNet152":models.resnet152}
 
 class ResNetFc(nn.Module):
-  def __init__(self, resnet_name, use_bottleneck=True, bottleneck_dim=256, new_cls=False, class_num=1000, source_num=2):
+  def __init__(self, resnet_name, use_bottleneck=True, bottleneck_dim=256, new_cls=False, class_num=1000):
     super(ResNetFc, self).__init__()
     model_resnet = resnet_dict[resnet_name](pretrained=True)
     self.conv1 = model_resnet.conv1
@@ -103,61 +103,36 @@ class ResNetFc(nn.Module):
     self.layer2 = model_resnet.layer2
     self.layer3 = model_resnet.layer3
     self.layer4 = model_resnet.layer4
-    self.avgpool = model_resnet.avgpool
     self.feature_layers = nn.Sequential(self.conv1, self.bn1, self.relu, self.maxpool, \
                          self.layer1, self.layer2, self.layer3, self.layer4, self.avgpool)
 
-    self.source_num = source_num
     self.use_bottleneck = use_bottleneck
     self.new_cls = new_cls
     if new_cls:
-        self.fc_list = []
         if self.use_bottleneck:
-            self.bottleneck_list = []
-            for i in range(self.source_num):
-                self.bottleneck_list.append(nn.Linear(model_resnet.fc.in_features, bottleneck_dim))
-                self.bottleneck_list[-1].weight.data.normal_(0, 0.005)
-                self.bottleneck_list[-1].bias.data.fill_(0.0)
-                self.fc_list.append(nn.Linear(bottleneck_dim, class_num))
-                self.fc_list[-1].weight.data.normal_(0, 0.01)
-                self.fc_list[-1].bias.data.fill_(0.0)
+            self.bottleneck = nn.Linear(model_resnet.fc.in_features, bottleneck_dim)
+            self.bottleneck.weight.data.normal_(0, 0.005)
+            self.bottleneck.bias.data.fill_(0.0)
+            self.fc = nn.Linear(bottleneck_dim, class_num)
+            self.fc.weight.data.normal_(0, 0.01)
+            self.fc.bias.data.fill_(0.0)
             self.__in_features = bottleneck_dim
         else:
-            for i in range(self.source_num):
-                self.fc_list.append(nn.Linear(model_resnet.fc.in_features, class_num))
-                self.fc_list[-1].weight.data.normal_(0, 0.01)
-                self.fc_list[-1].bias.data.fill_(0.0)
+            self.fc = nn.Linear(model_resnet.fc.in_features, class_num))
+            self.fc.weight.data.normal_(0, 0.01)
+            self.fc.bias.data.fill_(0.0)
             self.__in_features = model_resnet.fc.in_features
     else:
         self.fc = model_resnet.fc
         self.__in_features = model_resnet.fc.in_features
 
-  def to_gpu(self):
-    self.feature_layers = self.feature_layers.cuda()
-    for i in range(self.source_num):
-        if self.use_bottleneck:
-            self.bottleneck_list[i] = self.bottleneck_list[i].cuda()
-        self.fc_list[i] = self.fc_list[i].cuda()
-
   def forward(self, x):
-    if self.training:
-        x = self.feature_layers(x)
-        x = x.view(x.size(0), -1)
-        batch_size = x.size(0) // (self.source_num +1)
-        x_list = [x[i*batch_size:(i+1)*batch_size] for i in range(self.source_num+1)]
-        if self.use_bottleneck and self.new_cls:
-            xs_list = [self.bottleneck_list[i](x_list[i]) for i in range(self.source_num)]
-            xt_list = [self.bottleneck_list[i](x_list[-1]) for i in range(self.source_num)]
-        ys_list = [self.fc_list[i](xs_list[i]) for i in range(self.source_num)]
-        yt_list = [self.fc_list[i](xt_list[i]) for i in range(self.source_num)]
-        return xs_list, ys_list, xt_list, yt_list
-    else:
-        x = self.feature_layers(x)
-        x = x.view(x.size(0), -1)
-        if self.use_bottleneck and self.new_cls:
-            xt_list = [self.bottleneck_list[i](x) for i in range(self.source_num)]
-        yt_list = [self.fc_list[i](xt_list[i]) for i in range(self.source_num)]
-        return yt_list
+    x = self.feature_layers(x)
+    x = x.view(x.size(0), -1)
+    if self.use_bottleneck:
+        x = self.bottleneck(x)
+    y = self.fc(x)
+    return x, y
 
   def output_num(self):
     return self.__in_features
