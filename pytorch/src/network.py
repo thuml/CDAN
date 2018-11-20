@@ -5,31 +5,17 @@ import torchvision
 from torchvision import models
 from torch.autograd import Variable
 
-class AdversarialLayer(torch.autograd.Function):
-  def __init__(self, high_value=1.0):
-    self.iter_num = 0
-    self.alpha = 10
-    self.low = 0.0
-    self.high = high_value
-    self.max_iter = 10000.0
-    
-  def forward(self, input):
-    self.iter_num += 1
-    output = input * 1.0
-    return output
-
-  def backward(self, gradOutput):
-    self.coeff = np.float(2.0 * (self.high - self.low) / (1.0 + np.exp(-self.alpha*self.iter_num / self.max_iter)) - (self.high - self.low) + self.low)
-    return -self.coeff * gradOutput
-
-class SilenceLayer(torch.autograd.Function):
-  def __init__(self):
-    pass
-  def forward(self, input):
-    return input * 1
-
-  def backward(self, gradOutput):
-    return 0 * gradOutput
+def init_weights(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv2d') != -1 or classname.find('ConvTranspose2d') != -1:
+        nn.init.kaiming_uniform_(m.weight)
+        nn.init.zeros_(m.bias)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight, 1.0, 0.02)
+        nn.init.zeros_(m.bias)
+    elif classname.find('Linear') != -1:
+        nn.init.xavier_normal_(m.weight)
+        nn.init.zeros_(m.bias)
 
 class RandomLayer(torch.autograd.Function):
    def __init__(self, input_dim_list=[], output_dim=1024):
@@ -60,20 +46,17 @@ class AlexNetFc(nn.Module):
     self.new_cls = new_cls
     if new_cls:
         if self.use_bottleneck:
-            self.bottleneck = nn.Linear(4096, bottleneck_dim)
-            self.bottleneck.weight.data.normal_(0, 0.005)
-            self.bottleneck.bias.data.fill_(0.0)
+            self.bottleneck = nn.Linear(model_resnet.fc.in_features, bottleneck_dim)
             self.fc = nn.Linear(bottleneck_dim, class_num)
-            self.fc.weight.data.normal_(0, 0.01)
-            self.fc.bias.data.fill_(0.0)
+            self.bottleneck.apply(init_weights)
+            self.fc.apply(init_weights)
             self.__in_features = bottleneck_dim
         else:
-            self.fc = nn.Linear(4096, class_num)
-            self.fc.weight.data.normal_(0, 0.01)
-            self.fc.bias.data.fill_(0.0)
+            self.fc = nn.Linear(model_resnet.fc.in_features, class_num)
+            self.fc.apply(init_weights)
             self.__in_features = 4096
     else:
-        self.fc = model_alexnet.classifier[6]
+        self.fc = model_vgg.classifier[6]
         self.__in_features = 4096
 
   def forward(self, x):
@@ -91,6 +74,11 @@ class AlexNetFc(nn.Module):
 
 resnet_dict = {"ResNet18":models.resnet18, "ResNet34":models.resnet34, "ResNet50":models.resnet50, "ResNet101":models.resnet101, "ResNet152":models.resnet152}
 
+def grl_hook(coeff):
+    def fun1(grad):
+        return -coeff*grad.clone()
+    return fun1
+
 class ResNetFc(nn.Module):
   def __init__(self, resnet_name, use_bottleneck=True, bottleneck_dim=256, new_cls=False, class_num=1000):
     super(ResNetFc, self).__init__()
@@ -103,6 +91,7 @@ class ResNetFc(nn.Module):
     self.layer2 = model_resnet.layer2
     self.layer3 = model_resnet.layer3
     self.layer4 = model_resnet.layer4
+    self.avgpool = model_resnet.avgpool
     self.feature_layers = nn.Sequential(self.conv1, self.bn1, self.relu, self.maxpool, \
                          self.layer1, self.layer2, self.layer3, self.layer4, self.avgpool)
 
@@ -111,16 +100,13 @@ class ResNetFc(nn.Module):
     if new_cls:
         if self.use_bottleneck:
             self.bottleneck = nn.Linear(model_resnet.fc.in_features, bottleneck_dim)
-            self.bottleneck.weight.data.normal_(0, 0.005)
-            self.bottleneck.bias.data.fill_(0.0)
             self.fc = nn.Linear(bottleneck_dim, class_num)
-            self.fc.weight.data.normal_(0, 0.01)
-            self.fc.bias.data.fill_(0.0)
+            self.bottleneck.apply(init_weights)
+            self.fc.apply(init_weights)
             self.__in_features = bottleneck_dim
         else:
-            self.fc = nn.Linear(model_resnet.fc.in_features, class_num))
-            self.fc.weight.data.normal_(0, 0.01)
-            self.fc.bias.data.fill_(0.0)
+            self.fc = nn.Linear(model_resnet.fc.in_features, class_num)
+            self.fc.apply(init_weights)
             self.__in_features = model_resnet.fc.in_features
     else:
         self.fc = model_resnet.fc
@@ -129,7 +115,7 @@ class ResNetFc(nn.Module):
   def forward(self, x):
     x = self.feature_layers(x)
     x = x.view(x.size(0), -1)
-    if self.use_bottleneck:
+    if self.use_bottleneck and self.new_cls:
         x = self.bottleneck(x)
     y = self.fc(x)
     return x, y
@@ -152,17 +138,14 @@ class VGGFc(nn.Module):
     self.new_cls = new_cls
     if new_cls:
         if self.use_bottleneck:
-            self.bottleneck = nn.Linear(4096, bottleneck_dim)
-            self.bottleneck.weight.data.normal_(0, 0.005)
-            self.bottleneck.bias.data.fill_(0.0)
+            self.bottleneck = nn.Linear(model_resnet.fc.in_features, bottleneck_dim)
             self.fc = nn.Linear(bottleneck_dim, class_num)
-            self.fc.weight.data.normal_(0, 0.01)
-            self.fc.bias.data.fill_(0.0)
+            self.bottleneck.apply(init_weights)
+            self.fc.apply(init_weights)
             self.__in_features = bottleneck_dim
         else:
-            self.fc = nn.Linear(4096, class_num)
-            self.fc.weight.data.normal_(0, 0.01)
-            self.fc.bias.data.fill_(0.0)
+            self.fc = nn.Linear(model_resnet.fc.in_features, class_num)
+            self.fc.apply(init_weights)
             self.__in_features = 4096
     else:
         self.fc = model_vgg.classifier[6]
@@ -170,7 +153,7 @@ class VGGFc(nn.Module):
 
   def forward(self, x):
     x = self.features(x)
-    x = x.view(x.size(0), 25088)
+    x = x.view(x.size(0), -1)
     x = self.classifier(x)
     if self.use_bottleneck and self.new_cls:
         x = self.bottleneck(x)
@@ -181,27 +164,29 @@ class VGGFc(nn.Module):
     return self.__in_features
 
 class AdversarialNetwork(nn.Module):
-  def __init__(self, in_feature, class_num=None):
+  def __init__(self, in_feature, high=1.0):
     super(AdversarialNetwork, self).__init__()
     self.ad_layer1 = nn.Linear(in_feature, 1024)
     self.ad_layer2 = nn.Linear(1024,1024)
     self.ad_layer3 = nn.Linear(1024, 1)
-    self.ad_layer1.weight.data.normal_(0, 0.01)
-    self.ad_layer2.weight.data.normal_(0, 0.01)
-    self.ad_layer3.weight.data.normal_(0, 0.3)
-    self.ad_layer1.bias.data.fill_(0.0)
-    self.ad_layer2.bias.data.fill_(0.0)
-    self.ad_layer3.bias.data.fill_(0.0)
     self.relu1 = nn.ReLU()
     self.relu2 = nn.ReLU()
     self.dropout1 = nn.Dropout(0.5)
     self.dropout2 = nn.Dropout(0.5)
     self.sigmoid = nn.Sigmoid()
-    if class_num is not None:
-        self.embedding_layer = nn.Linear(class_num, 1024)
-        self.silence_layer = SilenceLayer()
+    self.apply(init_weights)
+    self.iter_num = 0
+    self.alpha = 10
+    self.low = 0.0
+    self.high = high
+    self.max_iter = 10000.0
 
-  def forward(self, x, y_label=None):
+  def forward(self, x):
+    if self.training:
+        self.iter_num += 1
+    coeff = np.float(2.0 * (self.high - self.low) / (1.0 + np.exp(-self.alpha*self.iter_num / self.max_iter)) - (self.high - self.low) + self.low)
+    x = x * 1.0
+    x.register_hook(grl_hook(coeff))
     x = self.ad_layer1(x)
     x = self.relu1(x)
     x = self.dropout1(x)
@@ -209,8 +194,6 @@ class AdversarialNetwork(nn.Module):
     x = self.relu2(x)
     x = self.dropout2(x)
     y = self.ad_layer3(x)
-    if y_label is not None:
-        y += torch.sum(self.embedding_layer(self.silence_layer(y_label)) * x, dim=1, keepdim=True)
     y = self.sigmoid(y)
     return y
 
@@ -224,17 +207,11 @@ class DomainClassifier(nn.Module):
     self.ad_layer1 = nn.Linear(in_feature, 1024)
     self.ad_layer2 = nn.Linear(1024,1024)
     self.ad_layer3 = nn.Linear(1024, class_num)
-    self.ad_layer1.weight.data.normal_(0, 0.01)
-    self.ad_layer2.weight.data.normal_(0, 0.01)
-    self.ad_layer3.weight.data.normal_(0, 0.3)
-    self.ad_layer1.bias.data.fill_(0.0)
-    self.ad_layer2.bias.data.fill_(0.0)
-    self.ad_layer3.bias.data.fill_(0.0)
     self.relu1 = nn.ReLU()
     self.relu2 = nn.ReLU()
     self.dropout1 = nn.Dropout(0.5)
     self.dropout2 = nn.Dropout(0.5)
-    self.sigmoid = nn.Sigmoid()
+    self.apply(init_weights)
 
   def forward(self, x):
     x = self.ad_layer1(x)
@@ -255,21 +232,28 @@ class SmallAdversarialNetwork(nn.Module):
     super(SmallAdversarialNetwork, self).__init__()
     self.ad_layer1 = nn.Linear(in_feature, 256)
     self.ad_layer2 = nn.Linear(256, 1)
-    self.ad_layer1.weight.data.normal_(0, 0.01)
-    self.ad_layer2.weight.data.normal_(0, 0.01)
-    self.ad_layer1.bias.data.fill_(0.0)
-    self.ad_layer2.bias.data.fill_(0.0)
     self.relu1 = nn.ReLU()
     self.dropout1 = nn.Dropout(0.5)
     self.sigmoid = nn.Sigmoid()
+    self.apply(init_weights)
+    self.iter_num = 0
+    self.alpha = 10
+    self.low = 0.0
+    self.high = high
+    self.max_iter = 10000.0
 
   def forward(self, x):
+    if self.training:
+        self.iter_num += 1
+    coeff = np.float(2.0 * (self.high - self.low) / (1.0 + np.exp(-self.alpha*self.iter_num / self.max_iter)) - (self.high - self.low) + self.low)
+    x = x * 1.0
+    x.register_hook(grl_hook(coeff))
     x = self.ad_layer1(x)
     x = self.relu1(x)
     x = self.dropout1(x)
     x = self.ad_layer2(x)
-    x = self.sigmoid(x)
-    return x
+    y = self.sigmoid(y)
+    return y
 
   def output_num(self):
     return 1
@@ -278,11 +262,20 @@ class LittleAdversarialNetwork(nn.Module):
   def __init__(self, in_feature):
     super(LittleAdversarialNetwork, self).__init__()
     self.ad_layer1 = nn.Linear(in_feature, 1)
-    self.ad_layer1.weight.data.normal_(0, 0.01)
-    self.ad_layer1.bias.data.fill_(0.0)
     self.sigmoid = nn.Sigmoid()
+    self.apply(init_weights)
+    self.iter_num = 0
+    self.alpha = 10
+    self.low = 0.0
+    self.high = high
+    self.max_iter = 10000.0
 
   def forward(self, x):
+    if self.training:
+        self.iter_num += 1
+    coeff = np.float(2.0 * (self.high - self.low) / (1.0 + np.exp(-self.alpha*self.iter_num / self.max_iter)) - (self.high - self.low) + self.low)
+    x = x * 1.0
+    x.register_hook(grl_hook(coeff))
     x = self.ad_layer1(x)
     x = self.sigmoid(x)
     return x

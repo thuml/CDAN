@@ -9,65 +9,58 @@ import torch.optim as optim
 import network
 import loss
 import pre_process as prep
-import torch.utils.data as util_data
+from torch.utils.data import DataLoader
 import lr_schedule
 import data_list
 from data_list import ImageList
 from torch.autograd import Variable
 import random
+import pdb
 
 optim_dict = {"SGD": optim.SGD}
 
-def image_classification_test(loader, model, test_10crop=True, gpu=True, iter_num=-1):
+def image_classification_test(loader, model, test_10crop=True):
     start_test = True
-    if test_10crop:
-        iter_test = [iter(loader['test'+str(i)]) for i in range(10)]
-        for i in range(len(loader['test0'])):
-            data = [iter_test[j].next() for j in range(10)]
-            inputs = [data[j][0] for j in range(10)]
-            labels = data[0][1]
-            if gpu:
+    with torch.no_grad():
+        if test_10crop:
+            iter_test = [iter(loader['test'][i]) for i in range(10)]
+            for i in range(len(loader['test'][0])):
+                data = [iter_test[j].next() for j in range(10)]
+                inputs = [data[j][0] for j in range(10)]
+                labels = data[0][1]
                 for j in range(10):
-                    inputs[j] = Variable(inputs[j].cuda())
-                labels = Variable(labels.cuda())
-            else:
+                    inputs[j] = inputs[j].cuda()
+                labels = labels
+                outputs = []
                 for j in range(10):
-                    inputs[j] = Variable(inputs[j])
-                labels = Variable(labels)
-            outputs = []
-            for j in range(10):
-                predict_out = model(inputs[j])
-                outputs.append(nn.Softmax(dim=1)(predict_out[0]))
-            outputs = sum(outputs)
-            if start_test:
-                all_output = outputs.data.float()
-                all_label = labels.data.float()
-                start_test = False
-            else:
-                all_output = torch.cat((all_output, outputs.data.float()), 0)
-                all_label = torch.cat((all_label, labels.data.float()), 0)
-    else:
-        iter_test = iter(loader["test"])
-        for i in range(len(loader['test'])):
-            data = iter_test.next()
-            inputs = data[0]
-            labels = data[1]
-            if gpu:
-                inputs = Variable(inputs.cuda())
-                labels = Variable(labels.cuda())
-            else:
-                inputs = Variable(inputs)
-                labels = Variable(labels)
-            outputs = model(inputs)[0]
-            if start_test:
-                all_output = outputs.data.float()
-                all_label = labels.data.float()
-                start_test = False
-            else:
-                all_output = torch.cat((all_output, outputs.data.float()), 0)
-                all_label = torch.cat((all_label, labels.data.float()), 0)       
+                    _, predict_out = model(inputs[j])
+                    outputs.append(nn.Softmax(dim=1)(predict_out))
+                outputs = sum(outputs)
+                if start_test:
+                    all_output = outputs.float().cpu()
+                    all_label = labels.float()
+                    start_test = False
+                else:
+                    all_output = torch.cat((all_output, outputs.float().cpu()), 0)
+                    all_label = torch.cat((all_label, labels.float()), 0)
+        else:
+            iter_test = iter(loader["test"])
+            for i in range(len(loader['test'])):
+                data = iter_test.next()
+                inputs = data[0]
+                labels = data[1]
+                inputs = inputs.cuda()
+                labels = labels.cuda()
+                _, outputs = model(inputs)
+                if start_test:
+                    all_output = outputs.float().cpu()
+                    all_label = labels.float()
+                    start_test = False
+                else:
+                    all_output = torch.cat((all_output, outputs.float().cpu()), 0)
+                    all_label = torch.cat((all_label, labels.float()), 0)
     _, predict = torch.max(all_output, 1)
-    accuracy = torch.sum(torch.squeeze(predict).float() == all_label) / float(all_label.size()[0])
+    accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
     return accuracy
 
 
@@ -75,48 +68,38 @@ def train(config):
     ## set pre-process
     prep_dict = {}
     prep_config = config["prep"]
-    prep_dict["source"] = prep.image_train( \
-                            resize_size=prep_config["resize_size"], \
-                            crop_size=prep_config["crop_size"])
-    prep_dict["target"] = prep.image_train( \
-                            resize_size=prep_config["resize_size"], \
-                            crop_size=prep_config["crop_size"])
+    prep_dict["source"] = prep.image_train(256, 224)
+    prep_dict["target"] = prep.image_train(256, 224)
     if prep_config["test_10crop"]:
-        prep_dict["test"] = prep.image_test_10crop( \
-                            resize_size=prep_config["resize_size"], \
-                            crop_size=prep_config["crop_size"])
+        prep_dict["test"] = prep.image_test_10crop(256, 224)
     else:
-        prep_dict["test"] = prep.image_test( \
-                            resize_size=prep_config["resize_size"], \
-                            crop_size=prep_config["crop_size"])
+        prep_dict["test"] = prep.image_test(256, 224)
 
     ## prepare data
     dsets = {}
     dset_loaders = {}
     data_config = config["data"]
+    train_bs = data_config["source"]["batch_size"]
+    test_bs = data_config["test"]["batch_size"]
     dsets["source"] = ImageList(open(data_config["source"]["list_path"]).readlines(), \
                                 transform=prep_dict["source"])
-    dset_loaders["source"] = util_data.DataLoader(dsets["source"], \
-            batch_size=data_config["source"]["batch_size"], \
-            shuffle=True, num_workers=4)
+    dset_loaders["source"] = DataLoader(dsets["source"], batch_size=train_bs, \
+            shuffle=True, num_workers=4, drop_last=True)
     dsets["target"] = ImageList(open(data_config["target"]["list_path"]).readlines(), \
                                 transform=prep_dict["target"])
-    dset_loaders["target"] = util_data.DataLoader(dsets["target"], \
-            batch_size=data_config["target"]["batch_size"], \
-            shuffle=True, num_workers=4)
+    dset_loaders["target"] = DataLoader(dsets["target"], batch_size=train_bs, \
+            shuffle=True, num_workers=4, drop_last=True)
 
     if prep_config["test_10crop"]:
         for i in range(10):
-            dsets["test"+str(i)] = ImageList(open(data_config["test"]["list_path"]).readlines(), \
-                                transform=prep_dict["test"]["val"+str(i)])
-            dset_loaders["test"+str(i)] = util_data.DataLoader(dsets["test"+str(i)], \
-                                batch_size=data_config["test"]["batch_size"], \
-                                shuffle=False, num_workers=4)
+            dsets["test"] = [ImageList(open(data_config["test"]["list_path"]).readlines(), \
+                                transform=prep_dict["test"][i]) for i in range(10)]
+            dset_loaders["test"] = [DataLoader(dset, batch_size=test_bs, \
+                                shuffle=False, num_workers=4) for dset in dsets['test']]
     else:
         dsets["test"] = ImageList(open(data_config["test"]["list_path"]).readlines(), \
                                 transform=prep_dict["test"])
-        dset_loaders["test"] = util_data.DataLoader(dsets["test"], \
-                                batch_size=data_config["test"]["batch_size"], \
+        dset_loaders["test"] = DataLoader(dsets["test"], batch_size=test_bs, \
                                 shuffle=False, num_workers=4)
 
     class_num = config["network"]["params"]["class_num"]
@@ -124,11 +107,7 @@ def train(config):
     ## set base network
     net_config = config["network"]
     base_network = net_config["name"](**net_config["params"])
-
-
-    use_gpu = torch.cuda.is_available()
-    if use_gpu:
-        base_network = base_network.cuda()
+    base_network = base_network.cuda()
 
     ## collect parameters
     if net_config["params"]["new_cls"]:
@@ -143,16 +122,14 @@ def train(config):
         parameter_list = [{"params":base_network.parameters(), "lr":1}]
 
     ## add additional network for some methods
-    gradient_reverse_layer = network.AdversarialLayer(high_value=config["high"])
     if config["loss"]["random"]:
         random_layer = network.RandomLayer([base_network.output_num(), class_num], config["loss"]["random_dim"])
-        ad_net = network.AdversarialNetwork(config["loss"]["random_dim"])
+        ad_net = network.AdversarialNetwork(config["loss"]["random_dim"], high=config["high"])
     else:
-        ad_net = network.AdversarialNetwork(base_network.output_num() * class_num)
-    if use_gpu:
-        if config["loss"]["random"]:
-            random_layer.cuda()
-        ad_net = ad_net.cuda()
+        ad_net = network.AdversarialNetwork(base_network.output_num() * class_num, high=config["high"])
+    if config["loss"]["random"]:
+        random_layer.cuda()
+    ad_net = ad_net.cuda()
     parameter_list.append({"params":ad_net.parameters(), "lr":10})
  
     ## set optimizer
@@ -167,16 +144,15 @@ def train(config):
 
 
     ## train   
-    len_train_source = len(dset_loaders["source"]) - 1
-    len_train_target = len(dset_loaders["target"]) - 1
+    len_train_source = len(dset_loaders["source"])
+    len_train_target = len(dset_loaders["target"])
     transfer_loss_value = classifier_loss_value = total_loss_value = 0.0
     best_acc = 0.0
     for i in range(config["num_iterations"]):
-        if i % config["test_interval"] == config["test_interval"]-1:
+        if i % config["test_interval"] == config["test_interval"] - 1:
             base_network.train(False)
             temp_acc = image_classification_test(dset_loaders, \
-                base_network, test_10crop=prep_config["test_10crop"], \
-                gpu=use_gpu)
+                base_network, test_10crop=prep_config["test_10crop"])
             temp_model = nn.Sequential(base_network)
             if temp_acc > best_acc:
                 best_acc = temp_acc
@@ -200,27 +176,19 @@ def train(config):
             iter_target = iter(dset_loaders["target"])
         inputs_source, labels_source = iter_source.next()
         inputs_target, labels_target = iter_target.next()
-        if use_gpu:
-            inputs_source, inputs_target, labels_source = \
-                Variable(inputs_source).cuda(), Variable(inputs_target).cuda(), \
-                Variable(labels_source).cuda()
-        else:
-            inputs_source, inputs_target, labels_source = Variable(inputs_source), \
-                Variable(inputs_target), Variable(labels_source) 
-
+        inputs_source, inputs_target, labels_source = inputs_source.cuda(), inputs_target.cuda(), labels_source.cuda()
         features_source, outputs_source = base_network(inputs_source)
         features_target, outputs_target = base_network(inputs_target)
         features = torch.cat((features_source, features_target), dim=0)
         outputs = torch.cat((outputs_source, outputs_target), dim=0)
-
         softmax_out = nn.Softmax(dim=1)(outputs).detach()
         ad_net.train(True)
         if config["loss"]['random']:
-            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, gradient_reverse_layer, \
-                                     random_layer, loss_params["use_focal"], use_gpu)
+            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, \
+                                     random_layer, loss_params["use_focal"])
         else:
-            transfer_loss = loss.CADA([features, softmax_out], ad_net, gradient_reverse_layer, \
-                                     loss_params["use_focal"], use_gpu)          
+            transfer_loss = loss.CADA([features, softmax_out], ad_net, \
+                                     loss_params["use_focal"])          
         classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
         total_loss.backward()
@@ -234,7 +202,6 @@ if __name__ == "__main__":
     parser.add_argument('--net', type=str, default='ResNet50', help="Options: ResNet18,34,50,101,152; AlexNet")
     parser.add_argument('--dset', type=str, default='office', help="The dataset or source dataset used")
     parser.add_argument('--s_dset_path', type=str, default='../data/office/amazon_31_list.txt', help="The source dataset path list")
-    parser.add_argument('--s_dset_path1', type=str, default='../data/office/amazon_31_list.txt', help="The source dataset path list")
     parser.add_argument('--t_dset_path', type=str, default='../data/office/webcam_10_list.txt', help="The target dataset path list")
     parser.add_argument('--test_interval', type=int, default=500, help="interval of two continuous test phase")
     parser.add_argument('--snapshot_interval', type=int, default=5000, help="interval of two continuous output model")
@@ -248,7 +215,7 @@ if __name__ == "__main__":
     # train config
     config = {}
     config["high"] = args.high
-    config["num_iterations"] = 12004
+    config["num_iterations"] = 20004
     config["test_interval"] = args.test_interval
     config["snapshot_interval"] = args.snapshot_interval
     config["output_for_test"] = True
@@ -260,13 +227,13 @@ if __name__ == "__main__":
         os.mkdir(config["output_path"])
 
     config["prep"] = {"test_10crop":True, "resize_size":256, "crop_size":224}
-    config["loss"] = {"trade_off":1.0, "use_focal":True}
+    config["loss"] = {"trade_off":1.0, "use_focal":False}
     if "AlexNet" in args.net:
         config["network"] = {"name":network.AlexNetFc, \
-            "params":{"use_bottleneck":True, "bottleneck_dim":256, "new_cls":True, "source_num":2} }
+            "params":{"use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
     elif "ResNet" in args.net:
         config["network"] = {"name":network.ResNetFc, \
-            "params":{"resnet_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True, "source_num":2} }
+            "params":{"resnet_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
     elif "VGG" in args.net:
         config["network"] = {"name":network.VGGFc, \
             "params":{"vgg_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
@@ -279,8 +246,7 @@ if __name__ == "__main__":
 
     config["dataset"] = args.dset
     if config["dataset"] == "office":
-        config["data"] = {"source0":{"list_path":args.s_dset_path, "batch_size":36}, \
-                          "source1":{"list_path":args.s_dset_path1, "batch_size":36}, \
+        config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
         if "amazon" in args.s_dset_path and "webcam" in args.t_dset_path:
