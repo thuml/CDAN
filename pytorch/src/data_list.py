@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import random
 from PIL import Image
-import torch.utils.data as data
+from torch.utils.data import Dataset
 import os
 import os.path
 
@@ -45,27 +45,7 @@ def default_loader(path):
         return pil_loader(path)
 
 
-class ImageList(object):
-    """A generic data loader where the images are arranged in this way: ::
-        root/dog/xxx.png
-        root/dog/xxy.png
-        root/dog/xxz.png
-        root/cat/123.png
-        root/cat/nsdf3.png
-        root/cat/asd932_.png
-    Args:
-        root (string): Root directory path.
-        transform (callable, optional): A function/transform that  takes in an PIL image
-            and returns a transformed version. E.g, ``transforms.RandomCrop``
-        target_transform (callable, optional): A function/transform that takes in the
-            target and transforms it.
-        loader (callable, optional): A function to load an image given its path.
-     Attributes:
-        classes (list): List of the class names.
-        class_to_idx (dict): Dict with items (class_name, class_index).
-        imgs (list): List of (image path, class_index) tuples
-    """
-
+class ImageList(Dataset):
     def __init__(self, image_list, labels=None, transform=None, target_transform=None,
                  loader=default_loader):
         imgs = make_dataset(image_list, labels)
@@ -79,12 +59,6 @@ class ImageList(object):
         self.loader = loader
 
     def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index
-        Returns:
-            tuple: (image, target) where target is class_index of the target class.
-        """
         path, target = self.imgs[index]
         img = self.loader(path)
         if self.transform is not None:
@@ -97,27 +71,7 @@ class ImageList(object):
     def __len__(self):
         return len(self.imgs)
 
-class ImageValueList(object):
-    """A generic data loader where the images are arranged in this way: ::
-        root/dog/xxx.png
-        root/dog/xxy.png
-        root/dog/xxz.png
-        root/cat/123.png
-        root/cat/nsdf3.png
-        root/cat/asd932_.png
-    Args:
-        root (string): Root directory path.
-        transform (callable, optional): A function/transform that  takes in an PIL image
-            and returns a transformed version. E.g, ``transforms.RandomCrop``
-        target_transform (callable, optional): A function/transform that takes in the
-            target and transforms it.
-        loader (callable, optional): A function to load an image given its path.
-     Attributes:
-        classes (list): List of the class names.
-        class_to_idx (dict): Dict with items (class_name, class_index).
-        imgs (list): List of (image path, class_index) tuples
-    """
-
+class ImageValueList(Dataset):
     def __init__(self, image_list, labels=None, transform=None, target_transform=None,
                  loader=default_loader):
         imgs = make_dataset(image_list, labels)
@@ -135,12 +89,6 @@ class ImageValueList(object):
         self.values = values
 
     def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index
-        Returns:
-            tuple: (image, target) where target is class_index of the target class.
-        """
         path, target = self.imgs[index]
         img = self.loader(path)
         if self.transform is not None:
