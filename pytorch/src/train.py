@@ -16,8 +16,8 @@ from data_list import ImageList
 from torch.autograd import Variable
 import random
 import pdb
+import math
 
-optim_dict = {"SGD": optim.SGD}
 
 def image_classification_test(loader, model, test_10crop=True):
     start_test = True
@@ -109,18 +109,6 @@ def train(config):
     base_network = net_config["name"](**net_config["params"])
     base_network = base_network.cuda()
 
-    ## collect parameters
-    if net_config["params"]["new_cls"]:
-        if net_config["params"]["use_bottleneck"]:
-            parameter_list = [{"params":base_network.feature_layers.parameters(), "lr":1}, \
-                            {"params":base_network.bottleneck.parameters(), "lr":10}, \
-                            {"params":base_network.fc.parameters(), "lr":10}]
-        else:
-            parameter_list = [{"params":base_network.feature_layers.parameters(), "lr":1}, \
-                            {"params":base_network.fc.parameters(), "lr":10}]
-    else:
-        parameter_list = [{"params":base_network.parameters(), "lr":1}]
-
     ## add additional network for some methods
     if config["loss"]["random"]:
         random_layer = network.RandomLayer([base_network.output_num(), class_num], config["loss"]["random_dim"])
@@ -130,11 +118,11 @@ def train(config):
     if config["loss"]["random"]:
         random_layer.cuda()
     ad_net = ad_net.cuda()
-    parameter_list.append({"params":ad_net.parameters(), "lr":10})
+    parameter_list = base_network.get_parameters() + ad_net.get_parameters()
  
     ## set optimizer
     optimizer_config = config["optimizer"]
-    optimizer = optim_dict[optimizer_config["type"]](parameter_list, \
+    optimizer = optimizer_config["type"](parameter_list, \
                     **(optimizer_config["optim_params"]))
     param_lr = []
     for param_group in optimizer.param_groups:
@@ -168,7 +156,7 @@ def train(config):
         loss_params = config["loss"]                  
         ## train one iter
         base_network.train(True)
-        optimizer = lr_scheduler(param_lr, optimizer, i, **schedule_param)
+        optimizer = lr_scheduler(optimizer, i, **schedule_param)
         optimizer.zero_grad()
         if i % len_train_source == 0:
             iter_source = iter(dset_loaders["source"])
@@ -181,14 +169,14 @@ def train(config):
         features_target, outputs_target = base_network(inputs_target)
         features = torch.cat((features_source, features_target), dim=0)
         outputs = torch.cat((outputs_source, outputs_target), dim=0)
-        softmax_out = nn.Softmax(dim=1)(outputs).detach()
+        softmax_out1 = nn.Softmax(dim=1)(outputs)
+        entropy = (1+loss.Entropy(softmax_out1)) / 2.0
+        softmax_out = softmax_out1.detach()
         ad_net.train(True)
         if config["loss"]['random']:
-            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, \
-                                     random_layer, loss_params["use_focal"])
+            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, random_layer, entropy)
         else:
-            transfer_loss = loss.CADA([features, softmax_out], ad_net, \
-                                     loss_params["use_focal"])          
+            transfer_loss = loss.CADA([features, softmax_out], ad_net, entropy)          
         classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
         total_loss.backward()
@@ -227,7 +215,7 @@ if __name__ == "__main__":
         os.mkdir(config["output_path"])
 
     config["prep"] = {"test_10crop":True, "resize_size":256, "crop_size":224}
-    config["loss"] = {"trade_off":1.0, "use_focal":False}
+    config["loss"] = {"trade_off":1.0}
     if "AlexNet" in args.net:
         config["network"] = {"name":network.AlexNetFc, \
             "params":{"use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
@@ -240,7 +228,7 @@ if __name__ == "__main__":
     config["loss"]["random"] = args.random
     config["loss"]["random_dim"] = 1024
 
-    config["optimizer"] = {"type":"SGD", "optim_params":{"lr":1.0, "momentum":0.9, \
+    config["optimizer"] = {"type":optim.SGD, "optim_params":{'lr':args.lr, "momentum":0.9, \
                            "weight_decay":0.0005, "nesterov":True}, "lr_type":"inv", \
                            "lr_param":{"init_lr":args.lr, "gamma":0.001, "power":0.75} }
 
@@ -273,6 +261,7 @@ if __name__ == "__main__":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
+        config["optimizer"]["lr_param"]["init_lr"] = 0.001
         config["network"]["params"]["class_num"] = 65
     config["out_file"].write(str(config))
     config["out_file"].flush()

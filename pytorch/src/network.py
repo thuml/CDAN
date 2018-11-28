@@ -123,6 +123,19 @@ class ResNetFc(nn.Module):
   def output_num(self):
     return self.__in_features
 
+  def get_parameters(self):
+    if self.new_cls:
+        if self.use_bottleneck:
+            parameter_list = [{"params":self.feature_layers.parameters(), "lr_mult":1, 'decay_mult':2}, \
+                            {"params":self.bottleneck.parameters(), "lr_mult":10, 'decay_mult':2}, \
+                            {"params":self.fc.parameters(), "lr_mult":10, 'decay_mult':2}]
+        else:
+            parameter_list = [{"params":self.feature_layers.parameters(), "lr_mult":1}, \
+                            {"params":self.fc.parameters(), "lr":10}]
+    else:
+        parameter_list = [{"params":self.parameters(), "lr":1}]
+    return parameter_list
+
 vgg_dict = {"VGG11":models.vgg11, "VGG13":models.vgg13, "VGG16":models.vgg16, "VGG19":models.vgg19, "VGG11BN":models.vgg11_bn, "VGG13BN":models.vgg13_bn, "VGG16BN":models.vgg16_bn, "VGG19BN":models.vgg19_bn} 
 class VGGFc(nn.Module):
   def __init__(self, vgg_name, use_bottleneck=True, bottleneck_dim=256, new_cls=False, class_num=1000):
@@ -199,6 +212,8 @@ class AdversarialNetwork(nn.Module):
 
   def output_num(self):
     return 1
+  def get_parameters(self):
+    return [{"params":self.parameters(), "lr_mult":10, 'decay_mult':2}]
 
 class DomainClassifier(nn.Module):
   def __init__(self, in_feature, class_num=2):
