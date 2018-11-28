@@ -174,9 +174,9 @@ def train(config):
         softmax_out = softmax_out1.detach()
         ad_net.train(True)
         if config["loss"]['random']:
-            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, random_layer, entropy)
+            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, random_layer, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)
         else:
-            transfer_loss = loss.CADA([features, softmax_out], ad_net, entropy)          
+            transfer_loss = loss.CADA([features, softmax_out], ad_net, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)          
         classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
         total_loss.backward()
