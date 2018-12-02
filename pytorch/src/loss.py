@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import math
 import torch.nn.functional as F
+import pdb
 
 def Entropy(input_):
     bs = input_.size(0)
@@ -25,9 +26,17 @@ def CADA(input_list, ad_net, entropy=None, coeff=None):
     batch_size = softmax_output.size(0) // 2
     dc_target = torch.from_numpy(np.array([[1]] * batch_size + [[0]] * batch_size)).float().cuda()
     if entropy is not None:
-        entropy.register_hook(grl_hook(-coeff))
-        entropy = torch.exp(-entropy)
-        return torch.mean(entropy * nn.BCELoss(size_average=False)(ad_out, dc_target))
+        entropy.register_hook(grl_hook(coeff))
+        entropy = 1.0+torch.exp(-entropy)
+        source_mask = torch.ones_like(entropy)
+        source_mask[feature.size(0)//2:] = 0
+        source_weight = entropy*source_mask
+        target_mask = torch.ones_like(entropy)
+        target_mask[0:feature.size(0)//2] = 0
+        target_weight = entropy*target_mask
+        weight = source_weight / torch.sum(source_weight).detach().item() + \
+                 target_weight / torch.sum(target_weight).detach().item()
+        return torch.mean(weight.view(-1, 1) * nn.BCELoss(reduction='none')(ad_out, dc_target))
     else:
         return nn.BCELoss()(ad_out, dc_target) 
 
@@ -43,8 +52,8 @@ def CADA_R(input_list, ad_net, random_layer, entropy=None, coeff=None):
     batch_size = softmax_output.size(0) // 2
     dc_target = torch.from_numpy(np.array([[1]] * batch_size + [[0]] * batch_size)).float().cuda()
     if entropy is not None:
-        entropy.register_hook(grl_hook(-coeff))
-        entropy = torch.exp(-entropy)
+        entropy.register_hook(grl_hook(coeff))
+        entropy = 1.0+torch.exp(-entropy)
         return torch.mean(entropy * nn.BCELoss(size_average=False)(ad_out, dc_target))
     else:
         return nn.BCELoss()(ad_out, dc_target) 

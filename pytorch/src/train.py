@@ -130,6 +130,8 @@ def train(config):
     schedule_param = optimizer_config["lr_param"]
     lr_scheduler = lr_schedule.schedule_dict[optimizer_config["lr_type"]]
 
+    #ad_net = nn.DataParallel(ad_net, device_ids=[0,1,2,3])
+    #base_network = nn.DataParallel(base_network, device_ids=[0,1,2,3])
 
     ## train   
     len_train_source = len(dset_loaders["source"])
@@ -174,9 +176,9 @@ def train(config):
         softmax_out = softmax_out1.detach()
         ad_net.train(True)
         if config["loss"]['random']:
-            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, random_layer, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)
+            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, random_layer)#, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)
         else:
-            transfer_loss = loss.CADA([features, softmax_out], ad_net, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)          
+            transfer_loss = loss.CADA([features, softmax_out], ad_net)#, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)          
         classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
         total_loss.backward()
@@ -199,6 +201,7 @@ if __name__ == "__main__":
     parser.add_argument('--random', type=bool, default=False, help="whether use random projection")
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+    #os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2,3'
 
     # train config
     config = {}
