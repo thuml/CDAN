@@ -171,14 +171,13 @@ def train(config):
         features_target, outputs_target = base_network(inputs_target)
         features = torch.cat((features_source, features_target), dim=0)
         outputs = torch.cat((outputs_source, outputs_target), dim=0)
-        softmax_out1 = nn.Softmax(dim=1)(outputs)
-        entropy = (1+loss.Entropy(softmax_out1)) / 2.0
-        softmax_out = softmax_out1.detach()
+        softmax_out = nn.Softmax(dim=1)(outputs)
+        entropy = loss.Entropy(softmax_out)
         ad_net.train(True)
         if config["loss"]['random']:
-            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, random_layer)#, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)
+            transfer_loss = loss.CADA_R([features, softmax_out], ad_net, random_layer, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)
         else:
-            transfer_loss = loss.CADA([features, softmax_out], ad_net)#, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)          
+            transfer_loss = loss.CADA([features, softmax_out], ad_net, entropy, 2.0/(1+math.exp(-10*i/10000.0))-1.0)          
         classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
         total_loss.backward()
@@ -233,20 +232,23 @@ if __name__ == "__main__":
 
     config["optimizer"] = {"type":optim.SGD, "optim_params":{'lr':args.lr, "momentum":0.9, \
                            "weight_decay":0.0005, "nesterov":True}, "lr_type":"inv", \
-                           "lr_param":{"init_lr":args.lr, "gamma":0.001, "power":0.75} }
+                           "lr_param":{"lr":args.lr, "gamma":0.001, "power":0.75} }
 
     config["dataset"] = args.dset
     if config["dataset"] == "office":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        if "amazon" in args.s_dset_path and "webcam" in args.t_dset_path:
-            config["optimizer"]["lr_param"]["init_lr"] = 0.001
-        elif "amazon" in args.s_dset_path and "dslr" in args.t_dset_path:
-            config["optimizer"]["lr_param"]["init_lr"] = 0.0003
-            config["high"] = 0.8
-        else:
-            config["optimizer"]["lr_param"]["init_lr"] = 0.0003
+        
+        if ("amazon" in args.s_dset_path and "webcam" in args.t_dset_path) or \
+           ("webcam" in args.s_dset_path and "dslr" in args.t_dset_path) or \
+           ("webcam" in args.s_dset_path and "amazon" in args.t_dset_path) or \
+           ("dslr" in args.s_dset_path and "amazon" in args.t_dset_path):
+            config["optimizer"]["lr_param"]["lr"] = 0.001
+        elif ("amazon" in args.s_dset_path and "dslr" in args.t_dset_path) or \
+             ("dslr" in args.s_dset_path and "webcam" in args.t_dset_path):
+            config["optimizer"]["lr_param"]["lr"] = 0.0003
+        
         config["network"]["params"]["class_num"] = 31
     elif config["dataset"] == "image-clef":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
@@ -258,13 +260,13 @@ if __name__ == "__main__":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        config["optimizer"]["lr_param"]["init_lr"] = 0.001
+        config["optimizer"]["lr_param"]["lr"] = args.lr
         config["network"]["params"]["class_num"] = 12
     elif config["dataset"] == "office-home":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        config["optimizer"]["lr_param"]["init_lr"] = 0.001
+        config["optimizer"]["lr_param"]["lr"] = 0.001
         config["network"]["params"]["class_num"] = 65
     config["out_file"].write(str(config))
     config["out_file"].flush()
