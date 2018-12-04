@@ -260,7 +260,7 @@ if __name__ == "__main__":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
                           "target":{"list_path":args.t_dset_path, "batch_size":36}, \
                           "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        config["optimizer"]["lr_param"]["lr"] = args.lr
+        config["optimizer"]["lr_param"]["lr"] = 0.001
         config["network"]["params"]["class_num"] = 12
     elif config["dataset"] == "office-home":
         config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
