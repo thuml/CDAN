@@ -74,8 +74,6 @@ def main():
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
-    parser.add_argument('--lr_ad', type=float, default=0.01, metavar='LR',
-                        help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                         help='SGD momentum (default: 0.5)')
     parser.add_argument('--gpu_id', type=str,
@@ -92,15 +90,15 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
     if args.task == 'USPS2MNIST':
-        source_list = '../../data/usps2mnist/usps_train.txt'
-        target_list = '../../data/usps2mnist/mnist_train.txt'
-        test_list = '../../data/usps2mnist/mnist_test.txt'
+        source_list = '../data/usps2mnist/usps_train.txt'
+        target_list = '../data/usps2mnist/mnist_train.txt'
+        test_list = '../data/usps2mnist/mnist_test.txt'
         start_epoch = 1
         decay_epoch = 6
     elif args.task == 'MNIST2USPS':
-        source_list = '../../data/usps2mnist/mnist_train.txt'
-        target_list = '../../data/usps2mnist/usps_train.txt'
-        test_list = '../../data/usps2mnist/usps_test.txt'
+        source_list = '../data/usps2mnist/mnist_train.txt'
+        target_list = '../data/usps2mnist/usps_train.txt'
+        test_list = '../data/usps2mnist/usps_test.txt'
         start_epoch = 1
         decay_epoch = 5
     else:
@@ -141,7 +139,7 @@ def main():
         ad_net = network.AdversarialNetwork(model.output_num() * class_num, 500)
     ad_net = ad_net.cuda()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=0.0005, momentum=0.9)
-    optimizer_ad = optim.SGD(ad_net.parameters(), lr=args.lr_ad, weight_decay=0.0005, momentum=0.9)
+    optimizer_ad = optim.SGD(ad_net.parameters(), lr=args.lr, weight_decay=0.0005, momentum=0.9)
 
     for epoch in range(1, args.epochs + 1):
         if epoch % decay_epoch == 0:

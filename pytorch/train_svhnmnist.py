@@ -72,9 +72,7 @@ def main():
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=10, metavar='N',
                         help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-                        help='learning rate (default: 0.01)')
-    parser.add_argument('--lr_ad', type=float, default=0.01, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.03, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                         help='SGD momentum (default: 0.5)')
@@ -91,9 +89,9 @@ def main():
     torch.manual_seed(args.seed)
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
-    source_list = '../../data/svhn2mnist/svhn_balanced.txt'
-    target_list = '../../data/svhn2mnist/mnist_train.txt'
-    test_list = '../../data/svhn2mnist/mnist_test.txt'
+    source_list = '../data/svhn2mnist/svhn_balanced.txt'
+    target_list = '../data/svhn2mnist/mnist_train.txt'
+    test_list = '../data/svhn2mnist/mnist_test.txt'
 
     train_loader = torch.utils.data.DataLoader(
         ImageList(open(source_list).readlines(), transform=transforms.Compose([
@@ -129,7 +127,7 @@ def main():
         ad_net = network.AdversarialNetwork(model.output_num() * class_num, 500)
     ad_net = ad_net.cuda()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=0.0005, momentum=0.9)
-    optimizer_ad = optim.SGD(ad_net.parameters(), lr=args.lr_ad, weight_decay=0.0005, momentum=0.9)
+    optimizer_ad = optim.SGD(ad_net.parameters(), lr=args.lr, weight_decay=0.0005, momentum=0.9)
 
     for epoch in range(1, args.epochs + 1):
         if epoch % 3 == 0:
