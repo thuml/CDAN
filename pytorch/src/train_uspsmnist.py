@@ -92,15 +92,15 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
     if args.task == 'USPS2MNIST':
-        source_list = '../data/usps2mnist/usps_train.txt'
-        target_list = '../data/usps2mnist/mnist_train.txt'
-        test_list = '../data/usps2mnist/mnist_test.txt'
+        source_list = '../../data/usps2mnist/usps_train.txt'
+        target_list = '../../data/usps2mnist/mnist_train.txt'
+        test_list = '../../data/usps2mnist/mnist_test.txt'
         start_epoch = 1
         decay_epoch = 6
     elif args.task == 'MNIST2USPS':
-        source_list = '../data/usps2mnist/mnist_train.txt'
-        target_list = '../data/usps2mnist/usps_train.txt'
-        test_list = '../data/usps2mnist/usps_test.txt'
+        source_list = '../../data/usps2mnist/mnist_train.txt'
+        target_list = '../../data/usps2mnist/usps_train.txt'
+        test_list = '../../data/usps2mnist/usps_test.txt'
         start_epoch = 1
         decay_epoch = 5
     else:

@@ -91,9 +91,9 @@ def main():
     torch.manual_seed(args.seed)
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
-    source_list = '../data/svhn2mnist/svhn_balanced.txt'
-    target_list = '../data/svhn2mnist/mnist_train.txt'
-    test_list = '../data/svhn2mnist/mnist_test.txt'
+    source_list = '../../data/svhn2mnist/svhn_balanced.txt'
+    target_list = '../../data/svhn2mnist/mnist_train.txt'
+    test_list = '../../data/svhn2mnist/mnist_test.txt'
 
     train_loader = torch.utils.data.DataLoader(
         ImageList(open(source_list).readlines(), transform=transforms.Compose([
