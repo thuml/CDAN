@@ -209,7 +209,7 @@ if __name__ == "__main__":
     config["output_for_test"] = True
     config["output_path"] = "../snapshot/" + args.output_dir
     if not osp.exists(config["output_path"]):
-        os.mkdir(config["output_path"])
+        os.system('mkdir -p '+config["output_path"])
     config["out_file"] = open(osp.join(config["output_path"], "log.txt"), "w")
     if not osp.exists(config["output_path"]):
         os.mkdir(config["output_path"])
