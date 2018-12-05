@@ -99,3 +99,5 @@ caffe/MANIFEST-*
 pytorch/snapshot/*
 pytorch/src/*.sh
 tensorflow/snapshot/*
+*.jpg
+*.png
