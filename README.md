@@ -25,7 +25,7 @@ VisDA 2017 dataset can be found [here](https://github.com/VisionLearningGroup/ta
 ### Image-clef
 We release the Image-clef dataset we used [here](https://drive.google.com/file/d/0B9kJH0-rJ2uRS3JILThaQXJhQlk/view).
 
-## Training
+## Training (PyTorch)
 All the parameters are set to optimal in our experiments. The following are the command for each task. The test_interval can be changed, which is the number of iterations between near test.
 ```
 SVHN->MNIST
@@ -59,6 +59,12 @@ pythonn train_image.py --gpu_id id --net ResNet50 --dset image-clef --test_inter
 ```
 
 If you want to run the random version of CDAN, add `--random` as a parameter.
+
+## Training (Caffe)
+Under developing.
+
+## Training (Tensorflow)
+Under developing.
 
 ## Citation
 If you use this code for your research, please consider citing:
