@@ -1,37 +1,17 @@
-# Caffe
+# CDAN implemented in Caffe
 
-[![Build Status](https://travis-ci.org/BVLC/caffe.svg?branch=master)](https://travis-ci.org/BVLC/caffe)
-[![License](https://img.shields.io/badge/license-BSD-blue.svg)](LICENSE)
+## Prerequisites
+- [Caffe](http://caffe.berkeleyvision.org/) 
+- CUDA and CuDNN suitable to Caffe
+- opencv
 
-Caffe is a deep learning framework made with expression, speed, and modularity in mind.
-It is developed by the Berkeley Vision and Learning Center ([BVLC](http://bvlc.eecs.berkeley.edu)) and community contributors.
+## Training
+Please follow the parameter instructions in solver to set the proper learning rate. In the solver, we provide with the form as follows, `dataset task [task ] lr`. And the condition that `test_iter x test_batch_size=test_data_size` should be satisfied.
 
-Check out the [project site](http://caffe.berkeleyvision.org) for all the details like
+After set the right parameters, please doenload the pretrained alexnet model in ImageNet [here](http://dl.caffe.berkeleyvision.org/bvlc_reference_caffenet.caffemodel) to [models/bvlc_reference_caffenet](models/bvlc_reference_caffenet). The command for running code is
+```
+./build/tools/caffe -solver models/cdan/solver_cdan_alex.prototxt -weighths models/bvlc_reference_caffenet/bvlc_reference_caffenet.caffemodel -gpu gpu_id
+```
 
-- [DIY Deep Learning for Vision with Caffe](https://docs.google.com/presentation/d/1UeKXVgRvvxg9OUdh_UiC5G71UMscNPlvArsWER41PsU/edit#slide=id.p)
-- [Tutorial Documentation](http://caffe.berkeleyvision.org/tutorial/)
-- [BVLC reference models](http://caffe.berkeleyvision.org/model_zoo.html) and the [community model zoo](https://github.com/BVLC/caffe/wiki/Model-Zoo)
-- [Installation instructions](http://caffe.berkeleyvision.org/installation.html)
-
-and step-by-step examples.
-
-[![Join the chat at https://gitter.im/BVLC/caffe](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/BVLC/caffe?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
-Please join the [caffe-users group](https://groups.google.com/forum/#!forum/caffe-users) or [gitter chat](https://gitter.im/BVLC/caffe) to ask questions and talk about methods and models.
-Framework development discussions and thorough bug reports are collected on [Issues](https://github.com/BVLC/caffe/issues).
-
-Happy brewing!
-
-## License and Citation
-
-Caffe is released under the [BSD 2-Clause license](https://github.com/BVLC/caffe/blob/master/LICENSE).
-The BVLC reference models are released for unrestricted use.
-
-Please cite Caffe in your publications if it helps your research:
-
-    @article{jia2014caffe,
-      Author = {Jia, Yangqing and Shelhamer, Evan and Donahue, Jeff and Karayev, Sergey and Long, Jonathan and Girshick, Ross and Guadarrama, Sergio and Darrell, Trevor},
-      Journal = {arXiv preprint arXiv:1408.5093},
-      Title = {Caffe: Convolutional Architecture for Fast Feature Embedding},
-      Year = {2014}
-    }
+## Note
+- We only implement the alexnet version for caffe due to memory consumption of caffe resnet.
