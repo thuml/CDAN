@@ -1,5 +1,5 @@
 # CDAN
-Code release for "Conditional Domain Adversarial Network" (NIPS 2018)
+Code release for ["Conditional Adversarial Domain Adaptation"](https://papers.nips.cc/paper/7436-conditional-adversarial-domain-adaptation) (NIPS 2018)
 
 ## Dataset
 ### Digits
