@@ -17,17 +17,6 @@ VisDA 2017 dataset can be found [here](https://github.com/VisionLearningGroup/ta
 ### Image-clef
 We release the Image-clef dataset we used [here](https://drive.google.com/file/d/0B9kJH0-rJ2uRS3JILThaQXJhQlk/view).
 
-```
-
-## Training (PyTorch)
-See instructions in [pytorch](pytorch).
-
-## Training (Caffe)
-See instructions in [caffe](caffe).
-
-## Training (Tensorflow)
-Under developing.
-
 ## Citation
 If you use this code for your research, please consider citing:
 ```

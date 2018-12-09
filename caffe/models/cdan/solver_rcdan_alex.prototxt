@@ -1,12 +1,14 @@
 net: "./models/cdan/train_rcdan_alex.prototxt"
-test_iter: 795 #webcam 
-#test_iter: 498 #dslr
-#test_iter: 2817 #amazon
-#test_iter: 600 #clef
-#test_iter: 809 #*3 Art
-#test_iter: 291 #*15 Clipart
-#test_iter: 193 #*23 Product
-#test_iter: 4357 #*1 Real_World
+#test_iter: 795 #office webcam 0.001
+#test_iter: 498 #office dslr 0.001
+#test_iter: 2817 #office amazon 0.0003
+#test_iter: 600 #image-clef ip pi 0.001 
+#test_iter: 600 #image-clef ci ic cp pc 0.0003 
+# office-home 0.001
+test_iter: 809 #office-home *3 Art
+#test_iter: 291 #office-home *15 Clipart
+#test_iter: 193 #office-home *23 Product
+#test_iter: 4357 #office=home *1 Real_World
 test_interval: 500
 base_lr: 0.001
 momentum: 0.9
