@@ -101,3 +101,5 @@ pytorch/*.sh
 tensorflow/snapshot/*
 *.jpg
 *.png
+*.tar.gz
+*.pth.tar

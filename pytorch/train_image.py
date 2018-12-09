@@ -68,12 +68,12 @@ def train(config):
     ## set pre-process
     prep_dict = {}
     prep_config = config["prep"]
-    prep_dict["source"] = prep.image_train(256, 224)
-    prep_dict["target"] = prep.image_train(256, 224)
+    prep_dict["source"] = prep.image_train(**config["prep"]['params'])
+    prep_dict["target"] = prep.image_train(**config["prep"]['params'])
     if prep_config["test_10crop"]:
-        prep_dict["test"] = prep.image_test_10crop(256, 224)
+        prep_dict["test"] = prep.image_test_10crop(**config["prep"]['params'])
     else:
-        prep_dict["test"] = prep.image_test(256, 224)
+        prep_dict["test"] = prep.image_test(**config["prep"]['params'])
 
     ## prepare data
     dsets = {}
@@ -131,8 +131,11 @@ def train(config):
     schedule_param = optimizer_config["lr_param"]
     lr_scheduler = lr_schedule.schedule_dict[optimizer_config["lr_type"]]
 
-    #ad_net = nn.DataParallel(ad_net, device_ids=[0,1,2,3])
-    #base_network = nn.DataParallel(base_network, device_ids=[0,1,2,3])
+    gpus = config['gpu'].split(',')
+    if len(gpus) > 0:
+        ad_net = nn.DataParallel(ad_net, device_ids=[int(i) for i in gpus])
+        base_network = nn.DataParallel(base_network, device_ids=[int(i) for i in gpus])
+        
 
     ## train   
     len_train_source = len(dset_loaders["source"])
@@ -159,6 +162,7 @@ def train(config):
         loss_params = config["loss"]                  
         ## train one iter
         base_network.train(True)
+        ad_net.train(True)
         optimizer = lr_scheduler(optimizer, i, **schedule_param)
         optimizer.zero_grad()
         if i % len_train_source == 0:
@@ -174,7 +178,6 @@ def train(config):
         outputs = torch.cat((outputs_source, outputs_target), dim=0)
         softmax_out = nn.Softmax(dim=1)(outputs)
         entropy = loss.Entropy(softmax_out)
-        ad_net.train(True)
         transfer_loss = loss.CDAN([features, softmax_out], ad_net, entropy, network.calc_coeff(i), random_layer)
         classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
@@ -194,7 +197,6 @@ if __name__ == "__main__":
     parser.add_argument('--snapshot_interval', type=int, default=5000, help="interval of two continuous output model")
     parser.add_argument('--output_dir', type=str, default='san', help="output directory of our model (in ../snapshot directory)")
     parser.add_argument('--lr', type=float, default=0.001, help="learning rate")
-    parser.add_argument('--high', type=float, default=1.0, help="highest number")
     parser.add_argument('--random', type=bool, default=False, help="whether use random projection")
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
@@ -202,8 +204,8 @@ if __name__ == "__main__":
 
     # train config
     config = {}
-    config["high"] = args.high
-    config["num_iterations"] = 50004
+    config["gpu"] = args.gpu_id
+    config["num_iterations"] = 100004
     config["test_interval"] = args.test_interval
     config["snapshot_interval"] = args.snapshot_interval
     config["output_for_test"] = True
@@ -214,9 +216,11 @@ if __name__ == "__main__":
     if not osp.exists(config["output_path"]):
         os.mkdir(config["output_path"])
 
-    config["prep"] = {"test_10crop":True, "resize_size":256, "crop_size":224}
+    config["prep"] = {"test_10crop":True, 'params':{"resize_size":256, "crop_size":224, 'alexnet':False}}
     config["loss"] = {"trade_off":1.0}
     if "AlexNet" in args.net:
+        config["prep"]['params']['alexnet'] = True
+        config["prep"]['params']['crop_size'] = 227
         config["network"] = {"name":network.AlexNetFc, \
             "params":{"use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
     elif "ResNet" in args.net:
@@ -233,39 +237,32 @@ if __name__ == "__main__":
                            "lr_param":{"lr":args.lr, "gamma":0.001, "power":0.75} }
 
     config["dataset"] = args.dset
+    config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
+                      "target":{"list_path":args.t_dset_path, "batch_size":36}, \
+                      "test":{"list_path":args.t_dset_path, "batch_size":4}}
+
     if config["dataset"] == "office":
-        config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
-                          "target":{"list_path":args.t_dset_path, "batch_size":36}, \
-                          "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        
         if ("amazon" in args.s_dset_path and "webcam" in args.t_dset_path) or \
            ("webcam" in args.s_dset_path and "dslr" in args.t_dset_path) or \
            ("webcam" in args.s_dset_path and "amazon" in args.t_dset_path) or \
            ("dslr" in args.s_dset_path and "amazon" in args.t_dset_path):
-            config["optimizer"]["lr_param"]["lr"] = 0.001
+            config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         elif ("amazon" in args.s_dset_path and "dslr" in args.t_dset_path) or \
              ("dslr" in args.s_dset_path and "webcam" in args.t_dset_path):
-            config["optimizer"]["lr_param"]["lr"] = 0.0003
-        
-        config["network"]["params"]["class_num"] = 31
+            config["optimizer"]["lr_param"]["lr"] = 0.0003 # optimal parameters       
+        config["network"]["params"]["class_num"] = 31 
     elif config["dataset"] == "image-clef":
-        config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
-                          "target":{"list_path":args.t_dset_path, "batch_size":36}, \
-                          "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        config["optimizer"]["lr_param"]["init_lr"] = 0.001
+        config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 12
     elif config["dataset"] == "visda":
-        config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
-                          "target":{"list_path":args.t_dset_path, "batch_size":36}, \
-                          "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        config["optimizer"]["lr_param"]["lr"] = 0.001
+        config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 12
+        config['loss']["trade_off"] = 1.0
     elif config["dataset"] == "office-home":
-        config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":36}, \
-                          "target":{"list_path":args.t_dset_path, "batch_size":36}, \
-                          "test":{"list_path":args.t_dset_path, "batch_size":4}}
-        config["optimizer"]["lr_param"]["lr"] = 0.001
+        config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 65
+    else:
+        raise ValueError('Dataset cannot be recognized. Please define your own dataset here.')
     config["out_file"].write(str(config))
     config["out_file"].flush()
     train(config)

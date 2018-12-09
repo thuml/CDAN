@@ -66,6 +66,9 @@ Under developing.
 ## Training (Tensorflow)
 Under developing.
 
+## Note
+- The alexnet version for PyTorch is under development. We plan to use alexnet [here](https://github.com/jiecaoyu/pytorch_imagenet)
+
 ## Citation
 If you use this code for your research, please consider citing:
 ```
