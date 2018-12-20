@@ -44,8 +44,8 @@ def CDAN(input_list, ad_net, entropy=None, coeff=None, random_layer=None):
     else:
         return nn.BCELoss()(ad_out, dc_target) 
 
-def DANN(features, ad_net, weight):
-    ad_out = ad_net(grl_layer(features))
+def DANN(features, ad_net):
+    ad_out = ad_net(features)
     batch_size = ad_out.size(0) // 2
     dc_target = torch.from_numpy(np.array([[1]] * batch_size + [[0]] * batch_size)).float().cuda()
     return nn.BCELoss()(ad_out, dc_target)
