@@ -132,7 +132,7 @@ def train(config):
     lr_scheduler = lr_schedule.schedule_dict[optimizer_config["lr_type"]]
 
     gpus = config['gpu'].split(',')
-    if len(gpus) > 0:
+    if len(gpus) > 1:
         ad_net = nn.DataParallel(ad_net, device_ids=[int(i) for i in gpus])
         base_network = nn.DataParallel(base_network, device_ids=[int(i) for i in gpus])
         
@@ -177,8 +177,15 @@ def train(config):
         features = torch.cat((features_source, features_target), dim=0)
         outputs = torch.cat((outputs_source, outputs_target), dim=0)
         softmax_out = nn.Softmax(dim=1)(outputs)
-        entropy = loss.Entropy(softmax_out)
-        transfer_loss = loss.CDAN([features, softmax_out], ad_net, entropy, network.calc_coeff(i), random_layer)
+        if config['method'] == 'CDAN-E':           
+            entropy = loss.Entropy(softmax_out)
+            transfer_loss = loss.CDAN([features, softmax_out], ad_net, entropy, network.calc_coeff(i), random_layer)
+        elif config['method']  == 'CDAN':
+            transfer_loss = loss.CDAN([features, softmax_out], ad_net, None, None, random_layer)
+        elif config['method']  == 'DANN':
+            transfer_loss = loss.DANN(features, ad_net)
+        else:
+            raise ValueError('Method cannot be recognized.')
         classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
         total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
         total_loss.backward()
@@ -187,10 +194,11 @@ def train(config):
     return best_acc
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Transfer Learning')
+    parser = argparse.ArgumentParser(description='Conditional Domain Adversarial Network')
+    parser.add_argument('method', type=str, default='CDAN-E', choices=['CDAN', 'CDAN-E', 'DANN'])
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
-    parser.add_argument('--net', type=str, default='ResNet50', help="Options: ResNet18,34,50,101,152; AlexNet")
-    parser.add_argument('--dset', type=str, default='office', help="The dataset or source dataset used")
+    parser.add_argument('--net', type=str, default='ResNet50', choices=["ResNet18", "ResNet34", "ResNet50", "ResNet101", "ResNet152", "VGG11", "VGG13", "VGG16", "VGG19", "VGG11BN", "VGG13BN", "VGG16BN", "VGG19BN", "AlexNet"])
+    parser.add_argument('--dset', type=str, default='office', choices=['office', 'image-clef', 'visda', 'office-home'], help="The dataset or source dataset used")
     parser.add_argument('--s_dset_path', type=str, default='../../data/office/amazon_31_list.txt', help="The source dataset path list")
     parser.add_argument('--t_dset_path', type=str, default='../../data/office/webcam_10_list.txt', help="The target dataset path list")
     parser.add_argument('--test_interval', type=int, default=500, help="interval of two continuous test phase")
@@ -204,6 +212,7 @@ if __name__ == "__main__":
 
     # train config
     config = {}
+    config['method'] = args.method
     config["gpu"] = args.gpu_id
     config["num_iterations"] = 100004
     config["test_interval"] = args.test_interval
