@@ -11,7 +11,7 @@ import loss as loss_func
 import numpy as np
 import network
 
-def train(args, model, ad_net, random_layer, train_loader, train_loader1, optimizer, optimizer_ad, epoch, start_epoch):
+def train(args, model, ad_net, random_layer, train_loader, train_loader1, optimizer, optimizer_ad, epoch, start_epoch, method):
     model.train()
     len_source = len(train_loader)
     len_target = len(train_loader1)
@@ -34,9 +34,16 @@ def train(args, model, ad_net, random_layer, train_loader, train_loader1, optimi
         feature, output = model(torch.cat((data_source, data_target), 0))
         loss = nn.CrossEntropyLoss()(output.narrow(0, 0, data_source.size(0)), label_source)
         softmax_output = nn.Softmax(dim=1)(output)
-        entropy = loss_func.Entropy(softmax_output)
         if epoch > start_epoch:
-            loss += 1.0*loss_func.CDAN([feature, softmax_output], ad_net, entropy, network.calc_coeff(num_iter*(epoch-start_epoch)+batch_idx), random_layer)
+            if method == 'CDAN-E':
+                entropy = loss_func.Entropy(softmax_output)
+                loss += loss_func.CDAN([feature, softmax_output], ad_net, entropy, network.calc_coeff(num_iter*(epoch-start_epoch)+batch_idx), random_layer)
+            elif method == 'CDAN':
+                loss += loss_func.CDAN([feature, softmax_output], ad_net, None, None, random_layer)
+            elif method == 'DANN':
+                loss += loss_func.DANN(feature, ad_net)
+            else:
+                raise ValueError('Method cannot be recognized.')
         loss.backward()
         optimizer.step()
         if epoch > start_epoch:
@@ -64,7 +71,8 @@ def test(args, model, test_loader):
 
 def main():
     # Training settings
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser = argparse.ArgumentParser(description='CDAN USPS MNIST')
+    parser.add_argument('method', type=str, default='CDAN-E', choices=['CDAN', 'CDAN-E', 'DANN'])
     parser.add_argument('--task', default='USPS2MNIST', help='task to perform')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='input batch size for training (default: 64)')
@@ -145,7 +153,7 @@ def main():
         if epoch % decay_epoch == 0:
             for param_group in optimizer.param_groups:
                 param_group["lr"] = param_group["lr"] * 0.5
-        train(args, model, ad_net, random_layer, train_loader, train_loader1, optimizer, optimizer_ad, epoch, start_epoch)
+        train(args, model, ad_net, random_layer, train_loader, train_loader1, optimizer, optimizer_ad, epoch, start_epoch, args.method)
         test(args, model, test_loader)
 
 if __name__ == '__main__':
