@@ -37,6 +37,8 @@ If you use this code for your research, please consider citing:
 ## Contact
 If you have any problem about our code, feel free to contact
 - caozj@cs.stanford.edu
+- youkaichao@gmail.com
+- shuyang5656@gmail.com
 - longmingsheng@gmail.com
 
 or describe your problem in Issues.
