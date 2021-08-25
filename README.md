@@ -1,4 +1,4 @@
-# CDAN
+# CDAN (Obsolete, upgraded to https://github.com/thuml/Transfer-Learning-Library)
 Code release for ["Conditional Adversarial Domain Adaptation"](https://papers.nips.cc/paper/7436-conditional-adversarial-domain-adaptation) (NIPS 2018)
 
 ## Dataset
