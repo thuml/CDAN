@@ -86,7 +86,7 @@ def cdan_model_fn(features, labels, mode, params):
 
     adversarial_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
       logits=ad_out, labels=ad_labels))
-    tf.identity(cross_entropy, name='adversarial_loss')
+    tf.identity(adversarial_loss, name='adversarial_loss')
     tf.summary.scalar('adversarial_loss', adversarial_loss)
 
     def exclude_batch_norm(name):
